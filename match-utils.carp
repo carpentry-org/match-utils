@@ -1,4 +1,5 @@
 (defmodule List
+  (hidden insert-)
   (defndynamic insert- [p l m]
     (cond
       (empty? l) m
@@ -7,6 +8,7 @@
         (cons (car l) (List.insert- p (cdr l) m))
         (cons (car m) (List.insert- p (cdr m) l)))))
 
+  (hidden sort-by)
   (defndynamic sort-by [p l]
     (if (empty? l)
       l
@@ -14,10 +16,13 @@
 )
 
 (defmodule OrderedTree
+  (hidden init)
   (defndynamic init [] (list '() {}))
 
+  (hidden length)
   (defndynamic length [t] (length (car t)))
 
+  (hidden put)
   (defndynamic put [t ks v]
     (cond
       (empty? ks) (macro-error "defn-match found multiple empty argument lists.")
@@ -36,29 +41,54 @@
             (Map.put tmap k
               (OrderedTree.put (OrderedTree.init) (cdr ks) v)))))))
 
+  (hidden reduce)
   (defndynamic reduce [t f acc]
     (reduce f acc (map (fn [k] (list k (Map.get (cadr t) k))) (car t))))
 )
 
+(doc MatchUtils
+  "Utility macros built on top of `match`. Provides `let-match` for
+pattern bindings with explicit fallback, and `defn-match` for
+pattern-matching function definitions.")
 (defmodule MatchUtils
+  (hidden pairs)
   (defndynamic pairs [l]
     (if (< (length l) 2)
       '()
       (cons (list (car l) (cadr l)) (MatchUtils.pairs (cddr l)))))
 
-  (defndynamic let-match- [bindings body]
+  (hidden let-match-)
+  (defndynamic let-match- [bindings then else]
     (cond
-      (empty? bindings) body
+      (empty? bindings) then
       (= (length bindings) 1)
         (macro-error
           (list "malformed bindings in let-match: the number of forms must be even, but I found a trailing " (car bindings)))
       `(match %(cadr bindings)
-        %(car bindings) %(MatchUtils.let-match- (cddr bindings) body)
-        _ ())))
+        %(car bindings) %(MatchUtils.let-match- (cddr bindings) then else)
+        _ %else)))
 
-  (defmacro let-match [bindings body]
-    (MatchUtils.let-match- bindings body))
+  (doc let-match
+    "Pattern-binding form with an explicit fallback. Tries each
+`pattern expression` pair in `bindings`; if every pattern matches,
+evaluates `then` with the bindings in scope. If any pattern fails,
+evaluates `else`. Both branches must have the same type, so the form
+is well-typed regardless of body type.
 
+```
+(MatchUtils.let-match [(Maybe.Just x) (Array.nth &xs 0)]
+  (IO.println &(fmt \"got %d\" x))
+  (IO.println \"empty\"))
+```
+
+When invoked as a direct `defn` body, prefer the qualified form
+`MatchUtils.let-match` over `(use MatchUtils)`. A Carp quirk causes
+unqualified `use`-imported macros expanding to `match` to leak the
+pattern variable into value-lookup.")
+  (defmacro let-match [bindings then else]
+    (MatchUtils.let-match- bindings then else))
+
+  (hidden deep-put)
   (defndynamic deep-put [acc form]
     (let [args (car form)
           binding (cadr form)]
@@ -66,9 +96,11 @@
         (macro-error "defn-match encountered an empty argument list.")
         (OrderedTree.put acc args binding))))
 
+  (hidden sort-forms)
   (defndynamic sort-forms [forms]
     (reduce MatchUtils.deep-put (OrderedTree.init) forms))
 
+  (hidden match-body)
   (defndynamic match-body [args forms]
     (cond
       (empty? args) forms
@@ -77,7 +109,7 @@
         (let [var (caar forms)]
           `(let [%var %(car args)]
              %(MatchUtils.match-body (cdr args) (Map.get (cadr forms) var))))
-      (not (list? (caar forms)))
+      (not (any? list? (car forms)))
         `(case %(car args)
           %@(OrderedTree.reduce
               forms
@@ -86,7 +118,10 @@
                     (cons (if (= (car p) '_) (car args) (car p))
                           (list (MatchUtils.match-body (cdr args) (cadr p))))))
               '())
-          (do (println* %(str "Unhandled case in defn-match: " (car args))) (bottom)))
+          %(let [f (List.find forms (fn [e] (= '_ (car e))))]
+            (if (nil? f)
+              `(do (println* %(str "Unhandled case in defn-match: " forms)) (bottom))
+              (cadr f))))
       `(match %(car args)
           %@(OrderedTree.reduce
               forms
@@ -94,25 +129,28 @@
                 (append acc (cons (car p) (list (MatchUtils.match-body (cdr args) (cadr p))))))
               '()))))
 
+  (hidden check-length)
   (defndynamic check-length [lens]
     (let [a (car lens)]
       (unless (all? (curry = a) (cdr lens))
         (macro-error
           (list "defn-match expected all argument lists to be of length " a ".")))))
 
+  (hidden score-row)
   (defndynamic score-row [row]
     (cond
       (empty? row) 0
-      (symbol? (car row)) 0
-      (not (list? (car row))) (inc (MatchUtils.score-row (cdr row)))
-      (+ (MatchUtils.score-row (cdr row)) 2)))
+      (symbol? (car row)) (MatchUtils.score-row (cdr row))
+      (inc (MatchUtils.score-row (cdr row)))))
 
+  (hidden score)
   (defndynamic score [matrix]
     (if (empty? (car matrix))
       '()
       (let [row (map car matrix)]
         (cons (MatchUtils.score-row row) (MatchUtils.score (map cdr matrix))))))
 
+  (hidden sort-precedence)
   (defndynamic sort-precedence [args paired]
     (let [scores (MatchUtils.score (map car paired))
           combined (map cdr (zip quote scores args))
@@ -126,23 +164,120 @@
               (cons (map cadr sorted) (cdr pair))))
           paired))))
 
+  (hidden arities-of)
+  (defndynamic arities-of [paired]
+    (reduce
+      (fn [acc p]
+        (let [ar (length (car p))]
+          (if (any? (fn [x] (= x ar)) acc)
+            acc
+            (cons-last ar acc))))
+      '()
+      paired))
+
+  (hidden rows-with-arity)
+  (defndynamic rows-with-arity [paired ar]
+    (filter (fn [p] (= (length (car p)) ar)) paired))
+
+  (hidden emit-arity)
+  (defndynamic emit-arity [name paired]
+    (if (= (length paired) 1)
+      ; single row → plain defn
+      (let [row (car paired)]
+        `(defn %name %(collect-into (car row) array) %(cadr row)))
+      ; multi row → match-compiled defn
+      (let-do [args (collect-into (map (fn [_] (gensym)) (car (car paired))) array)
+               sorted (MatchUtils.sort-precedence args paired)
+               sargs (collect-into (car sorted) array)
+               paired-sorted (cadr sorted)]
+        `(defn %name %args
+          %(MatchUtils.match-body sargs (MatchUtils.sort-forms paired-sorted))))))
+
+  (hidden emit-dispatcher)
+  (defndynamic emit-dispatcher [name arities]
+    (let [branches
+          (reduce
+            (fn [acc ar]
+              (let [per-arity-name
+                    (Symbol.concat [name '- (Symbol.from (str ar))])]
+                (append acc
+                  (list
+                    `(= (length args) %ar)
+                    (list 'quote per-arity-name)))))
+            '()
+            arities)]
+      `(defmacro %name [:rest args]
+        (cons
+          (cond
+            %@branches
+            (macro-error
+              %(str "defn-match: no arity version of " name)))
+          args))))
+
+  (doc defn-match
+    "Defines a pattern-matching function. Each row is a list of patterns
+followed by a body. Dispatch is compiled to nested `match` and `case`
+forms; columns are scored and the most discriminating positions are
+tested first.
+
+```
+(deftype Num
+  (I [Int])
+  (D [Double]))
+
+(MatchUtils.defn-match add-num
+  [(Num.I x) (Num.I y)] (Num.I (+ x y))
+  [(Num.D x) (Num.D y)] (Num.D (+ x y))
+  [(Num.D x) (Num.I y)] (Num.D (+ x (from-int y)))
+  [(Num.I x) (Num.D y)] (Num.D (+ (from-int x) y)))
+```
+
+When all rows have the same arity, expands to a single `defn` with
+nested match dispatch. `add-num` above is a plain function, first-class
+and usable in higher-order contexts.
+
+When rows have differing arities, expands to one `defn` per arity
+named `name-0`, `name-1`, …, plus a dispatching macro `name` that
+picks the right arity at the call site:
+
+```
+(MatchUtils.defn-match count
+  []                         0
+  [(Maybe.Just _)]           1
+  [(Maybe.Just _) (Maybe.Just _)] 2)
+
+; call sites: (count), (count m), (count m1 m2)
+; first-class per arity: count-0, count-1, count-2
+;   (Array.map count-1 maybes)   -- works
+;   (Array.map count m)          -- does NOT work, count is a macro
+```
+
+A row with a variable binding at column k will shadow later rows that
+have concrete patterns at the same column, since the variable matches
+anything at that position. Write concrete rows first and catch-alls
+last.
+
+When invoked as a direct `defn` body, prefer the qualified form
+`MatchUtils.defn-match` over `(use MatchUtils)` for the same reason
+documented on `let-match`.")
   (defmacro defn-match [name :rest forms]
     (cond
       (empty? forms)
         (macro-error "defn-match must contain at least one pair of arguments and body after the name.")
       (= (imod (length forms) 2) 1)
         (macro-error "defn-match must contain pairs of arguments and body after the name, but got an odd number of forms.")
-      (= (length forms) 2) ; special case for simple defn
-        (eval `(defn %name %@forms))
-      (let-do [args (collect-into (map (fn [_] (gensym)) (car forms)) array)
-               ; sort args here
-               paired (MatchUtils.pairs forms)
-               sorted (MatchUtils.sort-precedence args paired)
-               sargs (collect-into (car sorted) array)
-               paired (cadr sorted)]
-        (MatchUtils.check-length (map (fn [p] (length (car p))) paired))
-        (eval
-          `(defn %name %args
-            %(MatchUtils.match-body sargs
-              (MatchUtils.sort-forms paired)))))))
+      (let-do [paired (MatchUtils.pairs forms)
+               arities (MatchUtils.arities-of paired)]
+        (if (= (length arities) 1)
+          ; all rows share one arity → single defn
+          (MatchUtils.emit-arity name paired)
+          ; multi-arity → (do per-arity-defn... dispatcher-macro)
+          `(do
+            %@(map
+                (fn [ar]
+                  (MatchUtils.emit-arity
+                    (Symbol.concat [name '- (Symbol.from (str ar))])
+                    (MatchUtils.rows-with-arity paired ar)))
+                arities)
+            %(MatchUtils.emit-dispatcher name arities))))))
 )

@@ -1,0 +1,129 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+        <link rel="stylesheet" href="../style.css">
+    </head>
+    <body>
+        <div class="content">
+            <div class="logo">
+                <a href="https://github.com/carpentry-org/match-utils">
+                    <img src="">
+                </a>
+                <div class="title">
+                    match-utils
+                </div>
+                <div class="index">
+                    <ul>
+                        <li>
+                            <a href="MatchUtils.html">
+                                MatchUtils
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="module">
+                <h1>
+                    MatchUtils
+                </h1>
+                <div class="module-description">
+                    <p>Utility macros built on top of <code>match</code>. Provides <code>let-match</code> for
+pattern bindings with explicit fallback, and <code>defn-match</code> for
+pattern-matching function definitions.</p>
+
+                </div>
+                <div class="binder">
+                    <a class="anchor" href="#defn-match">
+                        <h3 id="defn-match">
+                            defn-match
+                        </h3>
+                    </a>
+                    <div class="description">
+                        macro
+                    </div>
+                    <p class="sig">
+                        Macro
+                    </p>
+                    <pre class="args">
+                        (defn-match name :rest forms)
+                    </pre>
+                    <p class="doc">
+                        <p>Defines a pattern-matching function. Each row is a list of patterns
+followed by a body. Dispatch is compiled to nested <code>match</code> and <code>case</code>
+forms; columns are scored and the most discriminating positions are
+tested first.</p>
+<pre><code>(deftype Num
+  (I [Int])
+  (D [Double]))
+
+(MatchUtils.defn-match add-num
+  [(Num.I x) (Num.I y)] (Num.I (+ x y))
+  [(Num.D x) (Num.D y)] (Num.D (+ x y))
+  [(Num.D x) (Num.I y)] (Num.D (+ x (from-int y)))
+  [(Num.I x) (Num.D y)] (Num.D (+ (from-int x) y)))
+</code></pre>
+<p>When all rows have the same arity, expands to a single <code>defn</code> with
+nested match dispatch. <code>add-num</code> above is a plain function, first-class
+and usable in higher-order contexts.</p>
+<p>When rows have differing arities, expands to one <code>defn</code> per arity
+named <code>name-0</code>, <code>name-1</code>, …, plus a dispatching macro <code>name</code> that
+picks the right arity at the call site:</p>
+<pre><code>(MatchUtils.defn-match count
+  []                         0
+  [(Maybe.Just _)]           1
+  [(Maybe.Just _) (Maybe.Just _)] 2)
+
+; call sites: (count), (count m), (count m1 m2)
+; first-class per arity: count-0, count-1, count-2
+;   (Array.map count-1 maybes)   -- works
+;   (Array.map count m)          -- does NOT work, count is a macro
+</code></pre>
+<p>A row with a variable binding at column k will shadow later rows that
+have concrete patterns at the same column, since the variable matches
+anything at that position. Write concrete rows first and catch-alls
+last.</p>
+<p>When invoked as a direct <code>defn</code> body, prefer the qualified form
+<code>MatchUtils.defn-match</code> over <code>(use MatchUtils)</code> for the same reason
+documented on <code>let-match</code>.</p>
+
+                    </p>
+                </div>
+                <div class="binder">
+                    <a class="anchor" href="#let-match">
+                        <h3 id="let-match">
+                            let-match
+                        </h3>
+                    </a>
+                    <div class="description">
+                        macro
+                    </div>
+                    <p class="sig">
+                        Macro
+                    </p>
+                    <pre class="args">
+                        (let-match bindings then else)
+                    </pre>
+                    <p class="doc">
+                        <p>Pattern-binding form with an explicit fallback. Tries each
+<code>pattern expression</code> pair in <code>bindings</code>; if every pattern matches,
+evaluates <code>then</code> with the bindings in scope. If any pattern fails,
+evaluates <code>else</code>. Both branches must have the same type, so the form
+is well-typed regardless of body type.</p>
+<pre><code>(MatchUtils.let-match [(Maybe.Just x) (Array.nth &amp;xs 0)]
+  (IO.println &amp;(fmt &quot;got %d&quot; x))
+  (IO.println &quot;empty&quot;))
+</code></pre>
+<p>When invoked as a direct <code>defn</code> body, prefer the qualified form
+<code>MatchUtils.let-match</code> over <code>(use MatchUtils)</code>. A Carp quirk causes
+unqualified <code>use</code>-imported macros expanding to <code>match</code> to leak the
+pattern variable into value-lookup.</p>
+
+                    </p>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,48 @@
+(load "match-utils.carp")
+
+(Project.config "title" "match-utils")
+(Project.config "docs-directory" "./docs/")
+(Project.config "docs-logo" "")
+(Project.config "docs-url" "https://github.com/carpentry-org/match-utils")
+(Project.config "docs-styling" "../style.css")
+(Project.config "docs-prelude" "Utility macros built on top of `match`.
+
+`MatchUtils.let-match` is a pattern-binding form with an explicit
+fallback. Both branches are required, so the form is well-typed
+regardless of body type.
+
+```
+(MatchUtils.let-match [(Maybe.Just x) (Array.nth &xs 0)]
+  (IO.println &(fmt \"got %d\" x))
+  (IO.println \"empty\"))
+```
+
+`MatchUtils.defn-match` defines a pattern-matching function. Rows are
+pairs of pattern lists and bodies; column scoring picks the most
+discriminating position to test first.
+
+```
+(deftype Num
+  (I [Int])
+  (D [Double]))
+
+(MatchUtils.defn-match add-num
+  [(Num.I x) (Num.I y)] (Num.I (+ x y))
+  [(Num.D x) (Num.D y)] (Num.D (+ x y))
+  [(Num.D x) (Num.I y)] (Num.D (+ x (from-int y)))
+  [(Num.I x) (Num.D y)] (Num.D (+ (from-int x) y)))
+```
+
+### Notes
+
+Prefer the qualified `MatchUtils.let-match` and `MatchUtils.defn-match`
+over `(use MatchUtils)`. A Carp quirk causes unqualified `use`-imported
+macros that expand to `match` to leak the pattern variable into
+value-lookup when the call is the direct body of a `defn`.
+
+`defn-match` does not implement default rows. A row with a variable
+binding at column k will shadow later rows that have concrete patterns
+at the same column. Write concrete rows first and catch-alls last.")
+
+(save-docs MatchUtils)
+(quit)

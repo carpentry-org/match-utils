@@ -1,0 +1,462 @@
+(load "Test.carp")
+(load "match-utils.carp")
+
+(use Test)
+
+; Sum types used across the test suite.
+(deftype Num
+  (I [Int])
+  (D [Double]))
+
+(deftype Tree
+  (Leaf [Int])
+  (Node [Int Int]))
+
+; Helpers that invoke the macros as direct defn bodies. The qualified
+; `MatchUtils.let-match` / `MatchUtils.defn-match` forms avoid the Carp
+; quirk where unqualified `use`-imported macros that expand to `match`
+; leak pattern variables into value lookup.
+
+; --- let-match exercised through wrappers ---
+
+(defn first-or [xs default]
+  (MatchUtils.let-match [(Maybe.Just x) (Array.nth xs 0)]
+    x
+    default))
+
+(defn sum-first-two [xs]
+  (MatchUtils.let-match [(Maybe.Just a) (Array.nth xs 0)
+                         (Maybe.Just b) (Array.nth xs 1)]
+    (+ a b)
+    -1))
+
+(defn describe-first [xs]
+  (MatchUtils.let-match [(Maybe.Just n) (Array.nth xs 0)]
+    (fmt "got %d" n)
+    @"empty"))
+
+(defn outer-scope-else [xs fallback]
+  ; else-branch referencing outer scope (not match-bound)
+  (MatchUtils.let-match [(Maybe.Just x) (Array.nth xs 0)]
+    x
+    (* fallback 2)))
+
+; --- defn-match: the README Num example (4 all-constructor rows) ---
+
+(MatchUtils.defn-match add-num
+  [(Num.I x) (Num.I y)] (Num.I (+ x y))
+  [(Num.D x) (Num.D y)] (Num.D (+ x y))
+  [(Num.D x) (Num.I y)] (Num.D (+ x (from-int y)))
+  [(Num.I x) (Num.D y)] (Num.D (+ (from-int x) y)))
+
+(defn num-equal? [a b]
+  (match-ref a
+    (Num.I x) (match-ref b
+                (Num.I y) (= x y)
+                (Num.D _) false)
+    (Num.D x) (match-ref b
+                (Num.D y) (= x y)
+                (Num.I _) false)))
+
+; --- defn-match: single-arg dispatch ---
+
+(MatchUtils.defn-match tree-sum
+  [(Tree.Leaf n)]   n
+  [(Tree.Node a b)] (+ a b))
+
+; --- defn-match: Maybe-pair dispatch over all 4 combinations ---
+
+(MatchUtils.defn-match pair-sum
+  [(Maybe.Just a) (Maybe.Just b)] (+ a b)
+  [(Maybe.Just a) (Maybe.Nothing)] a
+  [(Maybe.Nothing) (Maybe.Just b)] b
+  [(Maybe.Nothing) (Maybe.Nothing)] 0)
+
+; --- defn-match: 3-arg dispatch (depth exercise) ---
+
+(MatchUtils.defn-match triple-tag
+  [(Maybe.Just a) (Maybe.Just b) (Maybe.Just c)] (+ a (+ b c))
+  [(Maybe.Just a) (Maybe.Just b) (Maybe.Nothing)] (+ a b)
+  [(Maybe.Just a) (Maybe.Nothing) (Maybe.Just c)] (+ a c)
+  [(Maybe.Nothing) (Maybe.Just b) (Maybe.Just c)] (+ b c)
+  [(Maybe.Just a) (Maybe.Nothing) (Maybe.Nothing)] a
+  [(Maybe.Nothing) (Maybe.Just b) (Maybe.Nothing)] b
+  [(Maybe.Nothing) (Maybe.Nothing) (Maybe.Just c)] c
+  [(Maybe.Nothing) (Maybe.Nothing) (Maybe.Nothing)] 0)
+
+; --- defn-match: asymmetric-scoring case (exercises the scoring fix) ---
+; Col 0 has a symbol in row 0 and a constructor elsewhere; col 1 the opposite.
+; Before the scoring fix, col 0 would score 0 (bailed on first symbol) and col
+; 1 would score 1. Both columns now score 1; scoring no longer drops col 0.
+
+(MatchUtils.defn-match asym
+  [x              (Maybe.Just a)] (* a 2)
+  [(Maybe.Just b) y]               (+ b 1))
+
+; --- defn-match: single-row shortcut (falls through to plain defn) ---
+
+(MatchUtils.defn-match id-pair
+  [x y] (Pair.init x y))
+
+; --- defn-match: nested constructor sub-patterns share a head ---
+
+(MatchUtils.defn-match nested
+  [(Maybe.Just (Num.I n))] (* n 10)
+  [(Maybe.Just (Num.D n))] (Double.to-int (* n 10.0))
+  [(Maybe.Nothing)]         -1)
+
+; --- defn-match: regression for mixed-column case/match dispatch ---
+; Row 0 has a variable at col 0, later rows have constructors at col 0.
+; The old match-body examined only the first key (a symbol) and emitted a
+; broken (case ...); the fix uses `match` whenever any key at a level is
+; a list. Row 0 still catches everything first, which is correct
+; first-match-wins semantics.
+
+(MatchUtils.defn-match regress-mixed
+  [y                 (Maybe.Just a)] (* a 2)
+  [(Maybe.Just b)    (Maybe.Just c)] (+ b c)
+  [(Maybe.Nothing)   (Maybe.Just d)] d)
+
+; --- defn-match: constructors sharing a head, leaf ints distinguish ---
+
+(MatchUtils.defn-match count-depth
+  [(Tree.Leaf _)]   1
+  [(Tree.Node _ _)] 2)
+
+; --- defn-match: catch-all row at the end (Maybe with a variable row) ---
+
+(MatchUtils.defn-match with-default
+  [(Maybe.Just n)] n
+  [other]          -1)
+
+; --- defn-match: pure literal dispatch (exercises the `case` branch) ---
+
+(MatchUtils.defn-match grade
+  [90] @"A"
+  [80] @"B"
+  [70] @"C"
+  [_]  @"F")
+
+; --- defn-match: multi-arity with plain bodies ---
+; Expands to bump-0, bump-1, bump-2, bump-3 (first-class) plus a
+; dispatcher macro `bump` for call sites.
+
+(MatchUtils.defn-match bump
+  []       0
+  [x]      (+ x 1)
+  [x y]    (+ x y)
+  [x y z]  (+ (+ x y) z))
+
+; --- defn-match: multi-arity with pattern matching inside one arity ---
+; Exercises both arity dispatch AND pattern dispatch nested inside a
+; given arity. Arity 2 has 4 rows that compile via defn-match's match
+; dispatch; arities 0 and 1 are single-row.
+
+(MatchUtils.defn-match collapse
+  []                                     0
+  [(Maybe.Just x)]                       x
+  [(Maybe.Nothing)]                      -1
+  [(Maybe.Just a) (Maybe.Just b)]        (+ a b)
+  [(Maybe.Just a) (Maybe.Nothing)]       a
+  [(Maybe.Nothing) (Maybe.Just b)]       b
+  [(Maybe.Nothing) (Maybe.Nothing)]      0)
+
+(deftest test
+  ; ===== let-match: single-binding happy path =====
+  (assert-equal test
+    42
+    (first-or &[42 10 20] -1)
+    "let-match then-branch runs on a successful Just")
+
+  (assert-equal test
+    -1
+    (first-or &[] -1)
+    "let-match else-branch runs on a Nothing")
+
+  (assert-equal test
+    "got 7"
+    &(describe-first &[7])
+    "let-match body can be a non-Unit expression (String)")
+
+  (assert-equal test
+    "empty"
+    &(describe-first &(the (Array Int) []))
+    "let-match else-branch runs with matching body type")
+
+  ; ===== let-match: multi-binding paths =====
+  (assert-equal test
+    30
+    (sum-first-two &[10 20 30])
+    "let-match with two successful bindings runs the then-branch")
+
+  (assert-equal test
+    -1
+    (sum-first-two &[])
+    "let-match multi-binding: outer miss falls to else")
+
+  (assert-equal test
+    -1
+    (sum-first-two &[10])
+    "let-match multi-binding: inner miss falls to else")
+
+  ; ===== let-match: else references outer scope =====
+  (assert-equal test
+    20
+    (outer-scope-else &[] 10)
+    "let-match else-branch can reference surrounding scope")
+
+  (assert-equal test
+    99
+    (outer-scope-else &[99] 10)
+    "let-match happy path ignores the else expression entirely")
+
+  ; ===== defn-match: README Num example =====
+  (assert-true test
+    (num-equal? &(add-num (Num.I 1) (Num.I 2)) &(Num.I 3))
+    "add-num dispatches I+I to I")
+
+  (assert-true test
+    (num-equal? &(add-num (Num.D 1.5) (Num.D 2.5)) &(Num.D 4.0))
+    "add-num dispatches D+D to D")
+
+  (assert-true test
+    (num-equal? &(add-num (Num.D 1.5) (Num.I 2)) &(Num.D 3.5))
+    "add-num dispatches D+I to D")
+
+  (assert-true test
+    (num-equal? &(add-num (Num.I 2) (Num.D 1.5)) &(Num.D 3.5))
+    "add-num dispatches I+D to D")
+
+  ; ===== defn-match: single-arg dispatch =====
+  (assert-equal test
+    7
+    (tree-sum (Tree.Leaf 7))
+    "tree-sum on Leaf returns the leaf value")
+
+  (assert-equal test
+    13
+    (tree-sum (Tree.Node 6 7))
+    "tree-sum on Node adds the two components")
+
+  ; ===== defn-match: Maybe-pair dispatch =====
+  (assert-equal test
+    30
+    (pair-sum (Maybe.Just 10) (Maybe.Just 20))
+    "pair-sum Just+Just sums both")
+
+  (assert-equal test
+    42
+    (pair-sum (Maybe.Just 42) (Maybe.Nothing))
+    "pair-sum Just+Nothing returns the left value")
+
+  (assert-equal test
+    42
+    (pair-sum (Maybe.Nothing) (Maybe.Just 42))
+    "pair-sum Nothing+Just returns the right value")
+
+  (assert-equal test
+    0
+    (pair-sum (Maybe.Nothing) (Maybe.Nothing))
+    "pair-sum Nothing+Nothing returns 0")
+
+  ; ===== defn-match: 3-arg dispatch (all 8 combinations) =====
+  (assert-equal test
+    60
+    (triple-tag (Maybe.Just 10) (Maybe.Just 20) (Maybe.Just 30))
+    "triple-tag: all Just sums all three")
+
+  (assert-equal test
+    30
+    (triple-tag (Maybe.Just 10) (Maybe.Just 20) (Maybe.Nothing))
+    "triple-tag: JJN sums first two")
+
+  (assert-equal test
+    40
+    (triple-tag (Maybe.Just 10) (Maybe.Nothing) (Maybe.Just 30))
+    "triple-tag: JNJ skips the middle")
+
+  (assert-equal test
+    50
+    (triple-tag (Maybe.Nothing) (Maybe.Just 20) (Maybe.Just 30))
+    "triple-tag: NJJ skips the first")
+
+  (assert-equal test
+    10
+    (triple-tag (Maybe.Just 10) (Maybe.Nothing) (Maybe.Nothing))
+    "triple-tag: JNN returns the first")
+
+  (assert-equal test
+    20
+    (triple-tag (Maybe.Nothing) (Maybe.Just 20) (Maybe.Nothing))
+    "triple-tag: NJN returns the middle")
+
+  (assert-equal test
+    30
+    (triple-tag (Maybe.Nothing) (Maybe.Nothing) (Maybe.Just 30))
+    "triple-tag: NNJ returns the last")
+
+  (assert-equal test
+    0
+    (triple-tag (Maybe.Nothing) (Maybe.Nothing) (Maybe.Nothing))
+    "triple-tag: NNN returns the 0 fallback")
+
+  ; ===== defn-match: asymmetric scoring (regression for score-row bug) =====
+  (assert-equal test
+    20
+    (asym (Maybe.Nothing) (Maybe.Just 10))
+    "asym: second arg Just wins the first row (col 0 symbol must not poison scoring)")
+
+  (assert-equal test
+    31
+    (asym (Maybe.Just 30) (Maybe.Nothing))
+    "asym: first arg Just, second Nothing, second row fires")
+
+  ; ===== defn-match: single-row shortcut =====
+  (assert-equal test
+    &(Pair.init 1 2)
+    &(id-pair 1 2)
+    "id-pair single-row defn-match binds both args")
+
+  ; ===== defn-match: nested constructor sub-patterns =====
+  (assert-equal test
+    50
+    (nested (Maybe.Just (Num.I 5)))
+    "nested: (Just (I 5)) dispatches to the int path")
+
+  (assert-equal test
+    25
+    (nested (Maybe.Just (Num.D 2.5)))
+    "nested: (Just (D 2.5)) dispatches to the double path")
+
+  (assert-equal test
+    -1
+    (nested (Maybe.Nothing))
+    "nested: Nothing returns the fallback")
+
+  ; ===== defn-match: mixed-column dispatch regression =====
+  (assert-equal test
+    10
+    (regress-mixed (Maybe.Just 99) (Maybe.Just 5))
+    "regress-mixed: row 0 catches any first arg; col 1 determines a=5, body0=10")
+
+  (assert-equal test
+    20
+    (regress-mixed (Maybe.Nothing) (Maybe.Just 10))
+    "regress-mixed: row 0 still fires when first arg is Nothing")
+
+  ; ===== defn-match: depth dispatch on single-arg tree =====
+  (assert-equal test
+    1
+    (count-depth (Tree.Leaf 99))
+    "count-depth: Leaf returns 1")
+
+  (assert-equal test
+    2
+    (count-depth (Tree.Node 1 2))
+    "count-depth: Node returns 2")
+
+  ; ===== defn-match: catch-all row at the end =====
+  (assert-equal test
+    17
+    (with-default (Maybe.Just 17))
+    "with-default: Just returns the contained value")
+
+  (assert-equal test
+    -1
+    (with-default (Maybe.Nothing))
+    "with-default: Nothing falls to the catch-all variable row")
+
+  ; ===== defn-match: pure literal dispatch (case branch) =====
+  (assert-equal test
+    "A"
+    &(grade 90)
+    "grade 90 → A")
+
+  (assert-equal test
+    "B"
+    &(grade 80)
+    "grade 80 → B")
+
+  (assert-equal test
+    "C"
+    &(grade 70)
+    "grade 70 → C")
+
+  (assert-equal test
+    "F"
+    &(grade 42)
+    "grade: wildcard row catches non-literal matches")
+
+  ; ===== defn-match: multi-arity dispatch =====
+  (assert-equal test
+    0
+    (bump)
+    "bump: arity 0")
+
+  (assert-equal test
+    11
+    (bump 10)
+    "bump: arity 1")
+
+  (assert-equal test
+    7
+    (bump 3 4)
+    "bump: arity 2")
+
+  (assert-equal test
+    6
+    (bump 1 2 3)
+    "bump: arity 3")
+
+  ; Per-arity names are first-class: exercises the HoF retention goal.
+  (assert-equal test
+    0
+    (bump-0)
+    "bump-0 is addressable directly as a first-class defn")
+
+  (assert-equal test
+    11
+    (bump-1 10)
+    "bump-1 is addressable directly as a first-class defn")
+
+  (assert-equal test
+    &[11 21 31]
+    &(Array.endo-map &bump-1 [10 20 30])
+    "bump-1 passes through Array.endo-map (HoF use)")
+
+  ; ===== defn-match: multi-arity with pattern matching inside arities =====
+  (assert-equal test
+    0
+    (collapse)
+    "collapse: arity 0 returns 0")
+
+  (assert-equal test
+    42
+    (collapse (Maybe.Just 42))
+    "collapse: arity 1 Just returns inner value")
+
+  (assert-equal test
+    -1
+    (collapse (Maybe.Nothing))
+    "collapse: arity 1 Nothing returns -1")
+
+  (assert-equal test
+    30
+    (collapse (Maybe.Just 10) (Maybe.Just 20))
+    "collapse: arity 2 Just+Just sums")
+
+  (assert-equal test
+    5
+    (collapse (Maybe.Just 5) (Maybe.Nothing))
+    "collapse: arity 2 Just+Nothing returns left")
+
+  (assert-equal test
+    7
+    (collapse (Maybe.Nothing) (Maybe.Just 7))
+    "collapse: arity 2 Nothing+Just returns right")
+
+  (assert-equal test
+    0
+    (collapse (Maybe.Nothing) (Maybe.Nothing))
+    "collapse: arity 2 Nothing+Nothing returns 0")
+)
