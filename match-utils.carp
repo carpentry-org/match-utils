@@ -10,10 +10,7 @@
 
   (hidden sort-by)
   (defndynamic sort-by [p l]
-    (if (empty? l)
-      l
-      (List.insert- p (list (car l)) (List.sort-by p (cdr l)))))
-)
+    (if (empty? l) l (List.insert- p (list (car l)) (List.sort-by p (cdr l))))))
 
 (defmodule OrderedTree
   (hidden init)
@@ -25,7 +22,8 @@
   (hidden put)
   (defndynamic put [t ks v]
     (cond
-      (empty? ks) (macro-error "defn-match found multiple empty argument lists.")
+      (empty? ks)
+        (macro-error "defn-match found multiple empty argument lists.")
       (= (length ks) 1)
         (let [tkeys (car t)
               tmap (cadr t)]
@@ -34,17 +32,16 @@
             tmap (cadr t)
             k (car ks)]
         (if (Map.contains? tmap k)
-          (list (cons-last k tkeys)
-            (Map.update tmap k
-              (fn [t] (OrderedTree.put t (cdr ks) v))))
-          (list (cons-last k tkeys)
-            (Map.put tmap k
-              (OrderedTree.put (OrderedTree.init) (cdr ks) v)))))))
+          (list
+            (cons-last k tkeys)
+            (Map.update tmap k (fn [t] (OrderedTree.put t (cdr ks) v))))
+          (list
+            (cons-last k tkeys)
+            (Map.put tmap k (OrderedTree.put (OrderedTree.init) (cdr ks) v)))))))
 
   (hidden reduce)
   (defndynamic reduce [t f acc]
-    (reduce f acc (map (fn [k] (list k (Map.get (cadr t) k))) (car t))))
-)
+    (reduce f acc (map (fn [k] (list k (Map.get (cadr t) k))) (car t)))))
 
 (doc MatchUtils
   "Utility macros built on top of `match`. Provides `let-match` for
@@ -63,13 +60,14 @@ pattern-matching function definitions.")
       (empty? bindings) then
       (= (length bindings) 1)
         (macro-error
-          (list "malformed bindings in let-match: the number of forms must be even, but I found a trailing " (car bindings)))
+          (list
+            "malformed bindings in let-match: the number of forms must be even, but I found a trailing "
+            (car bindings)))
       `(match %(cadr bindings)
         %(car bindings) %(MatchUtils.let-match- (cddr bindings) then else)
         _ %else)))
 
-  (doc let-match
-    "Pattern-binding form with an explicit fallback. Tries each
+  (doc let-match "Pattern-binding form with an explicit fallback. Tries each
 `pattern expression` pair in `bindings`; if every pattern matches,
 evaluates `then` with the bindings in scope. If any pattern fails,
 evaluates `else`. Both branches must have the same type, so the form
@@ -103,31 +101,39 @@ pattern variable into value-lookup.")
   (hidden match-body)
   (defndynamic match-body [args forms]
     (cond
-      (empty? args) forms
+      (empty? args)
+      forms
       (and (= (OrderedTree.length forms) 1) (symbol? (caar forms)))
-        ; special case: a single var binding
-        (let [var (caar forms)]
-          `(let [%var %(car args)]
-             %(MatchUtils.match-body (cdr args) (Map.get (cadr forms) var))))
+      ; special case: a single var binding
+      (let [var (caar forms)]
+        `(let [%var %(car args)]
+          %(MatchUtils.match-body (cdr args) (Map.get (cadr forms) var))))
       (not (any? list? (car forms)))
-        `(case %(car args)
-          %@(OrderedTree.reduce
-              forms
-              (fn [acc p]
-                  (append acc
-                    (cons (if (= (car p) '_) (car args) (car p))
-                          (list (MatchUtils.match-body (cdr args) (cadr p))))))
-              '())
-          %(let [f (List.find forms (fn [e] (= '_ (car e))))]
-            (if (nil? f)
-              `(do (println* %(str "Unhandled case in defn-match: " forms)) (bottom))
-              (cadr f))))
+      `(case
+        %(car args)
+        %@(OrderedTree.reduce
+          forms
+          (fn [acc p]
+            (append
+              acc
+              (cons
+                (if (= (car p) '_) (car args) (car p))
+                (list (MatchUtils.match-body (cdr args) (cadr p))))))
+          '())
+        %(let [f (List.find forms (fn [e] (= '_ (car e))))]
+          (if (nil? f)
+            `(do
+              (println* %(str "Unhandled case in defn-match: " forms))
+              (bottom))
+            (cadr f))))
       `(match %(car args)
-          %@(OrderedTree.reduce
-              forms
-              (fn [acc p]
-                (append acc (cons (car p) (list (MatchUtils.match-body (cdr args) (cadr p))))))
-              '()))))
+        %@(OrderedTree.reduce
+          forms
+          (fn [acc p]
+            (append
+              acc
+              (cons (car p) (list (MatchUtils.match-body (cdr args) (cadr p))))))
+          '()))))
 
   (hidden check-length)
   (defndynamic check-length [lens]
@@ -155,7 +161,8 @@ pattern variable into value-lookup.")
     (let [scores (MatchUtils.score (map car paired))
           combined (map cdr (zip quote scores args))
           sorted (List.sort-by (fn [a b] (> (car a) (car b))) combined)]
-      (list (map cadr sorted)
+      (list
+        (map cadr sorted)
         (map
           (fn [pair]
             (let [args (car pair)
@@ -169,9 +176,7 @@ pattern variable into value-lookup.")
     (reduce
       (fn [acc p]
         (let [ar (length (car p))]
-          (if (any? (fn [x] (= x ar)) acc)
-            acc
-            (cons-last ar acc))))
+          (if (any? (fn [x] (= x ar)) acc) acc (cons-last ar acc))))
       '()
       paired))
 
@@ -186,7 +191,9 @@ pattern variable into value-lookup.")
       (let [row (car paired)]
         `(defn %name %(collect-into (car row) array) %(cadr row)))
       ; multi row → match-compiled defn
-      (let-do [args (collect-into (map (fn [_] (gensym)) (car (car paired))) array)
+      (let-do [args (collect-into
+                 (map (fn [_] (gensym)) (car (car paired)))
+                 array)
                sorted (MatchUtils.sort-precedence args paired)
                sargs (collect-into (car sorted) array)
                paired-sorted (cadr sorted)]
@@ -195,23 +202,20 @@ pattern variable into value-lookup.")
 
   (hidden emit-dispatcher)
   (defndynamic emit-dispatcher [name arities]
-    (let [branches
-          (reduce
+    (let [branches (reduce
             (fn [acc ar]
-              (let [per-arity-name
-                    (Symbol.concat [name '- (Symbol.from (str ar))])]
-                (append acc
-                  (list
-                    `(= (length args) %ar)
-                    (list 'quote per-arity-name)))))
+              (let [per-arity-name (Symbol.concat
+                      [name '- (Symbol.from (str ar))])]
+                (append
+                  acc
+                  (list `(= (length args) %ar) (list 'quote per-arity-name)))))
             '()
             arities)]
       `(defmacro %name [:rest args]
         (cons
           (cond
             %@branches
-            (macro-error
-              %(str "defn-match: no arity version of " name)))
+              (macro-error %(str "defn-match: no arity version of " name)))
           args))))
 
   (doc defn-match
@@ -263,9 +267,11 @@ documented on `let-match`.")
   (defmacro defn-match [name :rest forms]
     (cond
       (empty? forms)
-        (macro-error "defn-match must contain at least one pair of arguments and body after the name.")
+        (macro-error
+          "defn-match must contain at least one pair of arguments and body after the name.")
       (= (imod (length forms) 2) 1)
-        (macro-error "defn-match must contain pairs of arguments and body after the name, but got an odd number of forms.")
+        (macro-error
+          "defn-match must contain pairs of arguments and body after the name, but got an odd number of forms.")
       (let-do [paired (MatchUtils.pairs forms)
                arities (MatchUtils.arities-of paired)]
         (if (= (length arities) 1)
@@ -274,10 +280,9 @@ documented on `let-match`.")
           ; multi-arity → (do per-arity-defn... dispatcher-macro)
           `(do
             %@(map
-                (fn [ar]
-                  (MatchUtils.emit-arity
-                    (Symbol.concat [name '- (Symbol.from (str ar))])
-                    (MatchUtils.rows-with-arity paired ar)))
-                arities)
-            %(MatchUtils.emit-dispatcher name arities))))))
-)
+              (fn [ar]
+                (MatchUtils.emit-arity
+                  (Symbol.concat [name '- (Symbol.from (str ar))])
+                  (MatchUtils.rows-with-arity paired ar)))
+              arities)
+            %(MatchUtils.emit-dispatcher name arities)))))))
