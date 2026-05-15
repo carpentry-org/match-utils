@@ -4,9 +4,13 @@
 (use Test)
 
 ; Sum types used across the test suite.
-(deftype Num (I [Int]) (D [Double]))
+(deftype Num
+  (I [Int])
+  (D [Double]))
 
-(deftype Tree (Leaf [Int]) (Node [Int Int]))
+(deftype Tree
+  (Leaf [Int])
+  (Node [Int Int]))
 
 ; Helpers that invoke the macros as direct defn bodies. The qualified
 ; `MatchUtils.let-match` / `MatchUtils.defn-match` forms avoid the Carp
@@ -19,14 +23,16 @@
   (MatchUtils.let-match [(Maybe.Just x) (Array.nth xs 0)] x default))
 
 (defn sum-first-two [xs]
-  (MatchUtils.let-match
-    [(Maybe.Just a) (Array.nth xs 0) (Maybe.Just b) (Array.nth xs 1)]
+  (MatchUtils.let-match [
+      (Maybe.Just a)
+      (Array.nth xs 0)
+      (Maybe.Just b)
+      (Array.nth xs 1)]
     (+ a b)
     -1))
 
 (defn describe-first [xs]
-  (MatchUtils.let-match
-    [(Maybe.Just n) (Array.nth xs 0)]
+  (MatchUtils.let-match [(Maybe.Just n) (Array.nth xs 0)]
     (fmt "got %d" n)
     @"empty"))
 
@@ -36,8 +42,7 @@
 
 ; --- defn-match: the README Num example (4 all-constructor rows) ---
 
-(MatchUtils.defn-match
-  add-num
+(MatchUtils.defn-match add-num
   [(Num.I x) (Num.I y)]
   (Num.I (+ x y))
   [(Num.D x) (Num.D y)]
@@ -58,8 +63,7 @@
 
 ; --- defn-match: Maybe-pair dispatch over all 4 combinations ---
 
-(MatchUtils.defn-match
-  pair-sum
+(MatchUtils.defn-match pair-sum
   [(Maybe.Just a) (Maybe.Just b)]
   (+ a b)
   [(Maybe.Just a) (Maybe.Nothing)]
@@ -71,8 +75,7 @@
 
 ; --- defn-match: 3-arg dispatch (depth exercise) ---
 
-(MatchUtils.defn-match
-  triple-tag
+(MatchUtils.defn-match triple-tag
   [(Maybe.Just a) (Maybe.Just b) (Maybe.Just c)]
   (+ a (+ b c))
   [(Maybe.Just a) (Maybe.Just b) (Maybe.Nothing)]
@@ -95,8 +98,7 @@
 ; Before the scoring fix, col 0 would score 0 (bailed on first symbol) and col
 ; 1 would score 1. Both columns now score 1; scoring no longer drops col 0.
 
-(MatchUtils.defn-match
-  asym
+(MatchUtils.defn-match asym
   [x (Maybe.Just a)]
   (* a 2)
   [(Maybe.Just b) y]
@@ -108,8 +110,7 @@
 
 ; --- defn-match: nested constructor sub-patterns share a head ---
 
-(MatchUtils.defn-match
-  nested
+(MatchUtils.defn-match nested
   [(Maybe.Just (Num.I n))]
   (* n 10)
   [(Maybe.Just (Num.D n))]
@@ -124,8 +125,7 @@
 ; a list. Row 0 still catches everything first, which is correct
 ; first-match-wins semantics.
 
-(MatchUtils.defn-match
-  regress-mixed
+(MatchUtils.defn-match regress-mixed
   [y (Maybe.Just a)]
   (* a 2)
   [(Maybe.Just b) (Maybe.Just c)]
@@ -156,8 +156,7 @@
 ; given arity. Arity 2 has 4 rows that compile via defn-match's match
 ; dispatch; arities 0 and 1 are single-row.
 
-(MatchUtils.defn-match
-  collapse
+(MatchUtils.defn-match collapse
   []
   0
   [(Maybe.Just x)]
