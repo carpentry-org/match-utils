@@ -23,18 +23,15 @@
   (MatchUtils.let-match [(Maybe.Just x) (Array.nth xs 0)] x default))
 
 (defn sum-first-two [xs]
-  (MatchUtils.let-match [
-      (Maybe.Just a)
-      (Array.nth xs 0)
-      (Maybe.Just b)
-      (Array.nth xs 1)]
+  (MatchUtils.let-match
+    [(Maybe.Just a) (Array.nth xs 0) (Maybe.Just b) (Array.nth xs 1)]
     (+ a b)
     -1))
 
 (defn describe-first [xs]
   (MatchUtils.let-match [(Maybe.Just n) (Array.nth xs 0)]
-    (fmt "got %d" n)
-    @"empty"))
+                        (fmt "got %d" n)
+                        @"empty"))
 
 (defn outer-scope-else [xs fallback]
   ; else-branch referencing outer scope (not match-bound)
@@ -43,14 +40,14 @@
 ; --- defn-match: the README Num example (4 all-constructor rows) ---
 
 (MatchUtils.defn-match add-num
-  [(Num.I x) (Num.I y)]
-  (Num.I (+ x y))
-  [(Num.D x) (Num.D y)]
-  (Num.D (+ x y))
-  [(Num.D x) (Num.I y)]
-  (Num.D (+ x (from-int y)))
-  [(Num.I x) (Num.D y)]
-  (Num.D (+ (from-int x) y)))
+                       [(Num.I x) (Num.I y)]
+                       (Num.I (+ x y))
+                       [(Num.D x) (Num.D y)]
+                       (Num.D (+ x y))
+                       [(Num.D x) (Num.I y)]
+                       (Num.D (+ x (from-int y)))
+                       [(Num.I x) (Num.D y)]
+                       (Num.D (+ (from-int x) y)))
 
 (defn num-equal? [a b]
   (match-ref a
@@ -64,34 +61,34 @@
 ; --- defn-match: Maybe-pair dispatch over all 4 combinations ---
 
 (MatchUtils.defn-match pair-sum
-  [(Maybe.Just a) (Maybe.Just b)]
-  (+ a b)
-  [(Maybe.Just a) (Maybe.Nothing)]
-  a
-  [(Maybe.Nothing) (Maybe.Just b)]
-  b
-  [(Maybe.Nothing) (Maybe.Nothing)]
-  0)
+                       [(Maybe.Just a) (Maybe.Just b)]
+                       (+ a b)
+                       [(Maybe.Just a) (Maybe.Nothing)]
+                       a
+                       [(Maybe.Nothing) (Maybe.Just b)]
+                       b
+                       [(Maybe.Nothing) (Maybe.Nothing)]
+                       0)
 
 ; --- defn-match: 3-arg dispatch (depth exercise) ---
 
 (MatchUtils.defn-match triple-tag
-  [(Maybe.Just a) (Maybe.Just b) (Maybe.Just c)]
-  (+ a (+ b c))
-  [(Maybe.Just a) (Maybe.Just b) (Maybe.Nothing)]
-  (+ a b)
-  [(Maybe.Just a) (Maybe.Nothing) (Maybe.Just c)]
-  (+ a c)
-  [(Maybe.Nothing) (Maybe.Just b) (Maybe.Just c)]
-  (+ b c)
-  [(Maybe.Just a) (Maybe.Nothing) (Maybe.Nothing)]
-  a
-  [(Maybe.Nothing) (Maybe.Just b) (Maybe.Nothing)]
-  b
-  [(Maybe.Nothing) (Maybe.Nothing) (Maybe.Just c)]
-  c
-  [(Maybe.Nothing) (Maybe.Nothing) (Maybe.Nothing)]
-  0)
+                       [(Maybe.Just a) (Maybe.Just b) (Maybe.Just c)]
+                       (+ a (+ b c))
+                       [(Maybe.Just a) (Maybe.Just b) (Maybe.Nothing)]
+                       (+ a b)
+                       [(Maybe.Just a) (Maybe.Nothing) (Maybe.Just c)]
+                       (+ a c)
+                       [(Maybe.Nothing) (Maybe.Just b) (Maybe.Just c)]
+                       (+ b c)
+                       [(Maybe.Just a) (Maybe.Nothing) (Maybe.Nothing)]
+                       a
+                       [(Maybe.Nothing) (Maybe.Just b) (Maybe.Nothing)]
+                       b
+                       [(Maybe.Nothing) (Maybe.Nothing) (Maybe.Just c)]
+                       c
+                       [(Maybe.Nothing) (Maybe.Nothing) (Maybe.Nothing)]
+                       0)
 
 ; --- defn-match: asymmetric-scoring case (exercises the scoring fix) ---
 ; Col 0 has a symbol in row 0 and a constructor elsewhere; col 1 the opposite.
@@ -99,10 +96,10 @@
 ; 1 would score 1. Both columns now score 1; scoring no longer drops col 0.
 
 (MatchUtils.defn-match asym
-  [x (Maybe.Just a)]
-  (* a 2)
-  [(Maybe.Just b) y]
-  (+ b 1))
+                       [x (Maybe.Just a)]
+                       (* a 2)
+                       [(Maybe.Just b) y]
+                       (+ b 1))
 
 ; --- defn-match: single-row shortcut (falls through to plain defn) ---
 
@@ -111,12 +108,12 @@
 ; --- defn-match: nested constructor sub-patterns share a head ---
 
 (MatchUtils.defn-match nested
-  [(Maybe.Just (Num.I n))]
-  (* n 10)
-  [(Maybe.Just (Num.D n))]
-  (Double.to-int (* n 10.0))
-  [(Maybe.Nothing)]
-  -1)
+                       [(Maybe.Just (Num.I n))]
+                       (* n 10)
+                       [(Maybe.Just (Num.D n))]
+                       (Double.to-int (* n 10.0))
+                       [(Maybe.Nothing)]
+                       -1)
 
 ; --- defn-match: regression for mixed-column case/match dispatch ---
 ; Row 0 has a variable at col 0, later rows have constructors at col 0.
@@ -126,12 +123,12 @@
 ; first-match-wins semantics.
 
 (MatchUtils.defn-match regress-mixed
-  [y (Maybe.Just a)]
-  (* a 2)
-  [(Maybe.Just b) (Maybe.Just c)]
-  (+ b c)
-  [(Maybe.Nothing) (Maybe.Just d)]
-  d)
+                       [y (Maybe.Just a)]
+                       (* a 2)
+                       [(Maybe.Just b) (Maybe.Just c)]
+                       (+ b c)
+                       [(Maybe.Nothing) (Maybe.Just d)]
+                       d)
 
 ; --- defn-match: constructors sharing a head, leaf ints distinguish ---
 
@@ -157,20 +154,20 @@
 ; dispatch; arities 0 and 1 are single-row.
 
 (MatchUtils.defn-match collapse
-  []
-  0
-  [(Maybe.Just x)]
-  x
-  [(Maybe.Nothing)]
-  -1
-  [(Maybe.Just a) (Maybe.Just b)]
-  (+ a b)
-  [(Maybe.Just a) (Maybe.Nothing)]
-  a
-  [(Maybe.Nothing) (Maybe.Just b)]
-  b
-  [(Maybe.Nothing) (Maybe.Nothing)]
-  0)
+                       []
+                       0
+                       [(Maybe.Just x)]
+                       x
+                       [(Maybe.Nothing)]
+                       -1
+                       [(Maybe.Just a) (Maybe.Just b)]
+                       (+ a b)
+                       [(Maybe.Just a) (Maybe.Nothing)]
+                       a
+                       [(Maybe.Nothing) (Maybe.Just b)]
+                       b
+                       [(Maybe.Nothing) (Maybe.Nothing)]
+                       0)
 
 (deftest test
   ; ===== let-match: single-binding happy path =====
