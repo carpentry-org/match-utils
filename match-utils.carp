@@ -220,9 +220,7 @@ pattern variable into value-lookup.")
 
   (doc defn-match
     "Defines a pattern-matching function. Each row is a list of patterns
-followed by a body. Dispatch is compiled to nested `match` and `case`
-forms; columns are scored and the most discriminating positions are
-tested first.
+followed by a body.
 
 ```
 (deftype Num
