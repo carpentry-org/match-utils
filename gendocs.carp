@@ -18,8 +18,7 @@ regardless of body type.
 ```
 
 `MatchUtils.defn-match` defines a pattern-matching function. Rows are
-pairs of pattern lists and bodies; column scoring picks the most
-discriminating position to test first.
+pairs of pattern lists and bodies.
 
 ```
 (deftype Num

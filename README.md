@@ -13,7 +13,6 @@ is a collection of utility macros around `match`.
   (println* "nothing"))
 
 ; defn-match allows you to write pattern-matching functions.
-; Dispatch is optimized by column scoring, list patterns before literals.
 (deftype Num
   (I [Int])
   (D [Double]))
