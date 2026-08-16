@@ -63,6 +63,19 @@ followed by a body.</p>
   [(Num.D x) (Num.I y)] (Num.D (+ x (from-int y)))
   [(Num.I x) (Num.D y)] (Num.D (+ (from-int x) y)))
 </code></pre>
+<p>Rows are tried in source order and the first row that matches every
+column wins, so a variable pattern acts as a catch-all for its column
+without hiding later rows that the catch-all row itself fails to
+match:</p>
+<pre><code>(MatchUtils.defn-match pair-or
+  [(Maybe.Just a) (Maybe.Just b)] (+ a b)
+  [x              y]              0)
+
+(pair-or (Maybe.Just 1) (Maybe.Nothing))  ; =&gt; 0
+</code></pre>
+<p>A row whose patterns are all variables makes every later row
+unreachable, since it matches any input. Unreachable rows are dropped
+rather than compiled, so they no longer constrain the argument types.</p>
 <p>When all rows have the same arity, expands to a single <code>defn</code> with
 nested match dispatch. <code>add-num</code> above is a plain function, first-class
 and usable in higher-order contexts.</p>
@@ -79,10 +92,8 @@ picks the right arity at the call site:</p>
 ;   (Array.map count-1 maybes)   -- works
 ;   (Array.map count m)          -- does NOT work, count is a macro
 </code></pre>
-<p>A row with a variable binding at column k will shadow later rows that
-have concrete patterns at the same column, since the variable matches
-anything at that position. Write concrete rows first and catch-alls
-last.</p>
+<p>Inputs no row covers print <code>Unhandled case in name</code> and abort. The
+rows are not checked for exhaustiveness at compile time.</p>
 <p>When invoked as a direct <code>defn</code> body, prefer the qualified form
 <code>MatchUtils.defn-match</code> over <code>(use MatchUtils)</code> for the same reason
 documented on <code>let-match</code>.</p>

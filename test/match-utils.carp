@@ -78,8 +78,7 @@
                        [(Maybe.Nothing) (Maybe.Nothing) (Maybe.Nothing)]
                        0)
 
-; Col 0 has a symbol in row 0 and a constructor elsewhere; col 1 the opposite.
-; Both columns must score 1: a leading symbol must not poison column scoring.
+; Overlapping rows where neither subsumes the other; source order decides.
 (MatchUtils.defn-match asym
                        [x (Maybe.Just a)]
                        (* a 2)
@@ -128,6 +127,42 @@
                        b
                        [(Maybe.Nothing) (Maybe.Nothing)]
                        0)
+
+(MatchUtils.defn-match pair-or [(Maybe.Just a) (Maybe.Just b)] (+ a b) [x y] -1)
+
+(MatchUtils.defn-match wild-pair [(Maybe.Just a) (Maybe.Just b)] (+ a b) [_ _] 0)
+
+(MatchUtils.defn-match alpha
+                       [(Maybe.Just p) (Maybe.Just q)]
+                       (+ p q)
+                       [(Maybe.Just r) (Maybe.Nothing)]
+                       r
+                       [(Maybe.Nothing) (Maybe.Just s)]
+                       s
+                       [(Maybe.Nothing) (Maybe.Nothing)]
+                       0)
+
+(MatchUtils.defn-match keep-whole
+                       [(Maybe.Just a) (Maybe.Just b)]
+                       (+ a b)
+                       [m (Maybe.Nothing)]
+                       (Maybe.from m -1)
+                       [(Maybe.Nothing) n]
+                       (Maybe.from n -2))
+
+(MatchUtils.defn-match deep-default [(Maybe.Just (Num.I n))] (* n 10) [other] -1)
+
+(MatchUtils.defn-match literal-first [n] (* n 2) [7] 0)
+
+(MatchUtils.defn-match literal-default [90] 100 [n] n)
+
+(MatchUtils.defn-match tally
+                       []
+                       0
+                       [(Maybe.Just a) (Maybe.Just b)]
+                       (+ a b)
+                       [u v]
+                       -1)
 
 (deftest test
   (assert-equal test
@@ -298,7 +333,7 @@
 
   (assert-equal test
     20
-    (regress-mixed (Maybe.Nothing) (Maybe.Just 10))
+    (regress-mixed (the (Maybe Int) (Maybe.Nothing)) (Maybe.Just 10))
     "regress-mixed: row 0 still fires when first arg is Nothing")
 
   (assert-equal test
@@ -385,4 +420,131 @@
   (assert-equal test
     0
     (collapse (Maybe.Nothing) (Maybe.Nothing))
-    "collapse: arity 2 Nothing+Nothing returns 0"))
+    "collapse: arity 2 Nothing+Nothing returns 0")
+
+  (assert-equal test
+    3
+    (pair-or (Maybe.Just 1) (Maybe.Just 2))
+    "pair-or: concrete row wins when both columns match")
+
+  (assert-equal test
+    -1
+    (pair-or (Maybe.Just 1) (Maybe.Nothing))
+    "pair-or: trailing catch-all fires when only column 1 fails")
+
+  (assert-equal test
+    -1
+    (pair-or (Maybe.Nothing) (Maybe.Just 5))
+    "pair-or: trailing catch-all fires when only column 0 fails")
+
+  (assert-equal test
+    -1
+    (pair-or (Maybe.Nothing) (Maybe.Nothing))
+    "pair-or: trailing catch-all fires when both columns fail")
+
+  (assert-equal test
+    3
+    (wild-pair (Maybe.Just 1) (Maybe.Just 2))
+    "wild-pair: concrete row wins over the wildcard row")
+
+  (assert-equal test
+    0
+    (wild-pair (Maybe.Just 1) (Maybe.Nothing))
+    "wild-pair: an all-underscore row is a catch-all")
+
+  (assert-equal test
+    0
+    (wild-pair (Maybe.Nothing) (Maybe.Nothing))
+    "wild-pair: underscore catch-all covers every column")
+
+  (assert-equal test
+    3
+    (alpha (Maybe.Just 1) (Maybe.Just 2))
+    "alpha: rows binding the same constructor under different names stay distinct")
+
+  (assert-equal test
+    7
+    (alpha (Maybe.Just 7) (Maybe.Nothing))
+    "alpha: Just+Nothing reaches the second row")
+
+  (assert-equal test
+    9
+    (alpha (Maybe.Nothing) (Maybe.Just 9))
+    "alpha: Nothing+Just reaches the third row")
+
+  (assert-equal test
+    0
+    (alpha (Maybe.Nothing) (Maybe.Nothing))
+    "alpha: Nothing+Nothing reaches the fourth row")
+
+  (assert-equal test
+    3
+    (keep-whole (Maybe.Just 1) (Maybe.Just 2))
+    "keep-whole: concrete row still wins")
+
+  (assert-equal test
+    7
+    (keep-whole (Maybe.Just 7) (Maybe.Nothing))
+    "keep-whole: a catch-all column binds the whole scrutinee")
+
+  (assert-equal test
+    5
+    (keep-whole (Maybe.Nothing) (Maybe.Just 5))
+    "keep-whole: a catch-all in the second column binds too")
+
+  (assert-equal test
+    -1
+    (keep-whole (Maybe.Nothing) (Maybe.Nothing))
+    "keep-whole: the earlier of two matching rows wins")
+
+  (assert-equal test
+    50
+    (deep-default (Maybe.Just (Num.I 5)))
+    "deep-default: nested pattern still dispatches")
+
+  (assert-equal test
+    -1
+    (deep-default (Maybe.Just (Num.D 1.5)))
+    "deep-default: catch-all covers a nested miss")
+
+  (assert-equal test
+    -1
+    (deep-default (Maybe.Nothing))
+    "deep-default: catch-all covers an outer miss")
+
+  (assert-equal test
+    14
+    (literal-first 7)
+    "literal-first: a leading catch-all shadows a later literal row")
+
+  (assert-equal test
+    6
+    (literal-first 3)
+    "literal-first: the leading catch-all also takes unlisted values")
+
+  (assert-equal test
+    100
+    (literal-default 90)
+    "literal-default: literal row wins over the trailing variable row")
+
+  (assert-equal test
+    5
+    (literal-default 5)
+    "literal-default: a named variable row is the case default and binds")
+
+  (assert-equal test 0 (tally) "tally: arity 0 is unaffected by other arities")
+
+  (assert-equal test
+    3
+    (tally (Maybe.Just 1) (Maybe.Just 2))
+    "tally: arity 2 concrete row")
+
+  (assert-equal test
+    -1
+    (tally (Maybe.Just 1) (Maybe.Nothing))
+    "tally: a catch-all inside one arity works as in single-arity mode")
+
+  (assert-equal test
+    -1
+    (tally (Maybe.Nothing) (Maybe.Just 2))
+    "tally: catch-all covers the other arity-2 miss too"))

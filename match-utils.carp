@@ -1,46 +1,3 @@
-(defmodule List
-  (hidden insert-)
-  (defndynamic insert- [p l m]
-    (cond
-      (empty? l) m
-      (empty? m) l
-      (if (p (car l) (car m))
-        (cons (car l) (List.insert- p (cdr l) m))
-        (cons (car m) (List.insert- p (cdr m) l)))))
-
-  (hidden sort-by)
-  (defndynamic sort-by [p l]
-    (if (empty? l) l (List.insert- p (list (car l)) (List.sort-by p (cdr l))))))
-
-(defmodule OrderedTree
-  (hidden init)
-  (defndynamic init [] (list '() {}))
-
-  (hidden length)
-  (defndynamic length [t] (length (car t)))
-
-  (hidden put)
-  (defndynamic put [t ks v]
-    (cond
-      (empty? ks)
-        (macro-error "defn-match found multiple empty argument lists.")
-      (= (length ks) 1)
-        (let [tkeys (car t)
-              tmap (cadr t)]
-          (list (cons-last (car ks) tkeys) (Map.put tmap (car ks) v)))
-      (let [tkeys (car t)
-            tmap (cadr t)
-            k (car ks)]
-        (if (Map.contains? tmap k)
-          (list (cons-last k tkeys)
-                (Map.update tmap k (fn [t] (OrderedTree.put t (cdr ks) v))))
-          (list (cons-last k tkeys)
-                (Map.put tmap k (OrderedTree.put (OrderedTree.init) (cdr ks) v)))))))
-
-  (hidden reduce)
-  (defndynamic reduce [t f acc]
-    (reduce f acc (map (fn [k] (list k (Map.get (cadr t) k))) (car t)))))
-
 (doc MatchUtils
   "Utility macros built on top of `match`. Provides `let-match` for
 pattern bindings with explicit fallback, and `defn-match` for
@@ -50,7 +7,9 @@ pattern-matching function definitions.")
   (defndynamic pairs [l]
     (if (< (length l) 2)
       '()
-      (cons (list (car l) (cadr l)) (MatchUtils.pairs (cddr l)))))
+      (cons
+        (list (collect-into (car l) list) (cadr l))
+        (MatchUtils.pairs (cddr l)))))
 
   (hidden let-match-)
   (defndynamic let-match- [bindings then else]
@@ -84,91 +43,190 @@ pattern variable into value-lookup.")
   (defmacro let-match [bindings then else]
     (MatchUtils.let-match- bindings then else))
 
-  (hidden deep-put)
-  (defndynamic deep-put [acc form]
-    (let [args (car form)
-          binding (cadr form)]
-      (if (empty? args)
-        (macro-error "defn-match encountered an empty argument list.")
-        (OrderedTree.put acc args binding))))
-
-  (hidden sort-forms)
-  (defndynamic sort-forms [forms]
-    (reduce MatchUtils.deep-put (OrderedTree.init) forms))
-
-  (hidden match-body)
-  (defndynamic match-body [args forms]
+  (hidden occurs?)
+  (defndynamic occurs? [s form]
     (cond
-      (empty? args)
-      forms
-      (and (= (OrderedTree.length forms) 1) (symbol? (caar forms)))
-      ; special case: a single var binding
-      (let [var (caar forms)]
-        `(let [%var %(car args)]
-          %(MatchUtils.match-body (cdr args) (Map.get (cadr forms) var))))
-      (not (any? list? (car forms)))
-      `(case %(car args)
-             %@(OrderedTree.reduce forms
-                                   (fn [acc p]
-                                     (append acc
-                                             (cons (if (= (car p) '_)
-                                                     (car args)
-                                                     (car p))
-                                                   (list
-                                                     (MatchUtils.match-body (cdr args)
-                                                                            (cadr p))))))
-                                   '())
-             %(let [f (List.find forms (fn [e] (= '_ (car e))))]
-               (if (nil? f)
-                 `(do
-                   (println* %(str "Unhandled case in defn-match: " forms))
-                   (bottom))
-                 (cadr f))))
-      `(match %(car args)
-        %@(OrderedTree.reduce forms
-                              (fn [acc p]
-                                (append acc
-                                        (cons (car p)
-                                              (list
-                                                (MatchUtils.match-body (cdr args)
-                                                                       (cadr p))))))
-                              '()))))
+      (= s form) true
+      (list? form) (any? (fn [f] (MatchUtils.occurs? s f)) form)
+      (array? form)
+        (any? (fn [f] (MatchUtils.occurs? s f)) (collect-into form list))
+      false))
 
-  (hidden check-length)
-  (defndynamic check-length [lens]
-    (let [a (car lens)]
-      (unless (all? (curry = a) (cdr lens))
-        (macro-error
-          (list "defn-match expected all argument lists to be of length " a ".")))))
+  (hidden rotate)
+  (defndynamic rotate [n l]
+    (if (= n 0) l (MatchUtils.rotate (dec n) (cons-last (car l) (cdr l)))))
 
-  (hidden score-row)
-  (defndynamic score-row [row]
-    (cond
-      (empty? row) 0
-      (symbol? (car row)) (MatchUtils.score-row (cdr row))
-      (inc (MatchUtils.score-row (cdr row)))))
+  (hidden wildcards)
+  (defndynamic wildcards [n]
+    (if (= n 0) '() (cons '_ (MatchUtils.wildcards (dec n)))))
 
-  (hidden score)
-  (defndynamic score [matrix]
-    (if (empty? (car matrix))
+  (hidden fresh)
+  (defndynamic fresh [n]
+    (if (= n 0) '() (cons (gensym) (MatchUtils.fresh (dec n)))))
+
+  (hidden discriminant)
+  (defndynamic discriminant [patterns]
+    (if (symbol? (car patterns))
+      (inc (MatchUtils.discriminant (cdr patterns)))
+      0))
+
+  (hidden bind)
+  (defndynamic bind [vars values body]
+    (let [bindings (reduce
+            (fn [acc p]
+              (if (MatchUtils.occurs? (car p) body)
+                (append acc (list (car p) (cadr p)))
+                acc))
+            '()
+            (map cdr (zip quote vars values)))]
+      (if (empty? bindings) body `(let %(collect-into bindings array) %body))))
+
+  (hidden unhandled)
+  (defndynamic unhandled [name]
+    `(do (println* %(str "Unhandled case in " name)) (bottom)))
+
+  (hidden constructors)
+  (defndynamic constructors [rows]
+    (reduce
+      (fn [acc row]
+        (let [p (caar row)]
+          (if (and (list? p) (not (any? (fn [ctor] (= (car ctor) (car p))) acc)))
+            (cons-last (list (car p) (length (cdr p))) acc)
+            acc)))
       '()
-      (let [row (map car matrix)]
-        (cons (MatchUtils.score-row row) (MatchUtils.score (map cdr matrix))))))
+      rows))
 
-  (hidden sort-precedence)
-  (defndynamic sort-precedence [args paired]
-    (let [scores (MatchUtils.score (map car paired))
-          combined (map cdr (zip quote scores args))
-          sorted (List.sort-by (fn [a b] (> (car a) (car b))) combined)]
-      (list (map cadr sorted)
-            (map
-              (fn [pair]
-                (let [args (car pair)
-                      combined (map cdr (zip quote scores args))
-                      sorted (List.sort-by (fn [a b] (> (car a) (car b)))
-                                           combined)]
-                  (cons (map cadr sorted) (cdr pair))))
-              paired))))
+  (hidden literals)
+  (defndynamic literals [rows]
+    (reduce
+      (fn [acc row]
+        (let [p (caar row)]
+          (if (or (symbol? p) (any? (fn [lit] (= lit p)) acc))
+            acc
+            (cons-last p acc))))
+      '()
+      rows))
+
+  (hidden specialize)
+  (defndynamic specialize [rows constructor arity whole]
+    (reduce
+      (fn [acc row]
+        (let [patterns (car row)
+              body (cadr row)
+              p (car patterns)]
+          (cond
+            (symbol? p)
+              (cons-last
+                (list
+                  (append (MatchUtils.wildcards arity) (cdr patterns))
+                  (MatchUtils.bind (list p) (list whole) body))
+                acc)
+            (and (list? p) (= (car p) constructor))
+              (cons-last (list (append (cdr p) (cdr patterns)) body) acc)
+            acc)))
+      '()
+      rows))
+
+  (hidden specialize-literal)
+  (defndynamic specialize-literal [rows literal whole]
+    (reduce
+      (fn [acc row]
+        (let [patterns (car row)
+              body (cadr row)
+              p (car patterns)]
+          (cond
+            (symbol? p)
+              (cons-last
+                (list (cdr patterns)
+                      (MatchUtils.bind (list p) (list whole) body))
+                acc)
+            (= p literal) (cons-last (list (cdr patterns) body) acc)
+            acc)))
+      '()
+      rows))
+
+  (hidden defaults)
+  (defndynamic defaults [rows whole]
+    (reduce
+      (fn [acc row]
+        (let [patterns (car row)
+              p (car patterns)]
+          (if (symbol? p)
+            (cons-last
+              (list (cdr patterns)
+                    (MatchUtils.bind (list p) (list whole) (cadr row)))
+              acc)
+            acc)))
+      '()
+      rows))
+
+  (hidden needs-whole?)
+  (defndynamic needs-whole? [rows]
+    (any?
+      (fn [row]
+        (let [p (caar row)] (and (symbol? p) (MatchUtils.occurs? p (cadr row)))))
+      rows))
+
+  (hidden emit-match)
+  (defndynamic emit-match [name scrutinee others rows]
+    (let [whole (if (MatchUtils.needs-whole? rows) (gensym) '_)
+          fallback (gensym)
+          arms (reduce
+            (fn [acc ctor]
+              (let [subs (MatchUtils.fresh (cadr ctor))]
+                (append acc
+                        (list (cons (car ctor) subs)
+                              (MatchUtils.compile name
+                                                  (append subs others)
+                                                  (MatchUtils.specialize rows
+                                                                         (car ctor)
+                                                                         (cadr ctor)
+                                                                         whole))))))
+            '()
+            (MatchUtils.constructors rows))
+          others-rows (MatchUtils.defaults rows fallback)
+          tree `(match %scrutinee
+            %@arms %fallback
+            %(if (empty? others-rows)
+              (MatchUtils.unhandled name)
+              (MatchUtils.compile name others others-rows)))]
+      (if (= whole '_) tree `(let [%whole @&%scrutinee] %tree))))
+
+  (hidden emit-case)
+  (defndynamic emit-case [name scrutinee others rows]
+    (let [arms (reduce
+            (fn [acc lit]
+              (append acc
+                      (list lit
+                            (MatchUtils.compile name
+                                                others
+                                                (MatchUtils.specialize-literal rows
+                                                                               lit
+                                                                               scrutinee)))))
+            '()
+            (MatchUtils.literals rows))
+          others-rows (MatchUtils.defaults rows scrutinee)]
+      `(case %scrutinee
+             %@arms
+             %(if (empty? others-rows)
+               (MatchUtils.unhandled name)
+               (MatchUtils.compile name others others-rows)))))
+
+  (hidden compile)
+  (defndynamic compile [name scrutinees rows]
+    (cond
+      (empty? rows) (MatchUtils.unhandled name)
+      (empty? scrutinees) (cadr (car rows))
+      (all? symbol? (caar rows))
+        (MatchUtils.bind (caar rows) scrutinees (cadr (car rows)))
+      (let [col (MatchUtils.discriminant (caar rows))
+            ordered (MatchUtils.rotate col scrutinees)
+            aligned (map
+              (fn [row] (list (MatchUtils.rotate col (car row)) (cadr row)))
+              rows)]
+        (if (any? list? (map caar aligned))
+          (MatchUtils.emit-match name (car ordered) (cdr ordered) aligned)
+          (MatchUtils.emit-case name (car ordered) (cdr ordered) aligned)))))
 
   (hidden arities-of)
   (defndynamic arities-of [paired]
@@ -185,19 +243,12 @@ pattern variable into value-lookup.")
 
   (hidden emit-arity)
   (defndynamic emit-arity [name paired]
-    (if (= (length paired) 1)
-      ; single row → plain defn
+    (if (and (= (length paired) 1) (all? symbol? (caar paired)))
       (let [row (car paired)]
         `(defn %name %(collect-into (car row) array) %(cadr row)))
-      ; multi row → match-compiled defn
-      (let-do [args (collect-into
-                 (map (fn [_] (gensym)) (car (car paired)))
-                 array)
-               sorted (MatchUtils.sort-precedence args paired)
-               sargs (collect-into (car sorted) array)
-               paired-sorted (cadr sorted)]
-        `(defn %name %args
-          %(MatchUtils.match-body sargs (MatchUtils.sort-forms paired-sorted))))))
+      (let [args (map (fn [_] (gensym)) (caar paired))]
+        `(defn %name %(collect-into args array)
+          %(MatchUtils.compile name args paired)))))
 
   (hidden emit-dispatcher)
   (defndynamic emit-dispatcher [name arities]
@@ -234,6 +285,23 @@ followed by a body.
   [(Num.I x) (Num.D y)] (Num.D (+ (from-int x) y)))
 ```
 
+Rows are tried in source order and the first row that matches every
+column wins, so a variable pattern acts as a catch-all for its column
+without hiding later rows that the catch-all row itself fails to
+match:
+
+```
+(MatchUtils.defn-match pair-or
+  [(Maybe.Just a) (Maybe.Just b)] (+ a b)
+  [x              y]              0)
+
+(pair-or (Maybe.Just 1) (Maybe.Nothing))  ; => 0
+```
+
+A row whose patterns are all variables makes every later row
+unreachable, since it matches any input. Unreachable rows are dropped
+rather than compiled, so they no longer constrain the argument types.
+
 When all rows have the same arity, expands to a single `defn` with
 nested match dispatch. `add-num` above is a plain function, first-class
 and usable in higher-order contexts.
@@ -254,10 +322,8 @@ picks the right arity at the call site:
 ;   (Array.map count m)          -- does NOT work, count is a macro
 ```
 
-A row with a variable binding at column k will shadow later rows that
-have concrete patterns at the same column, since the variable matches
-anything at that position. Write concrete rows first and catch-alls
-last.
+Inputs no row covers print `Unhandled case in name` and abort. The
+rows are not checked for exhaustiveness at compile time.
 
 When invoked as a direct `defn` body, prefer the qualified form
 `MatchUtils.defn-match` over `(use MatchUtils)` for the same reason

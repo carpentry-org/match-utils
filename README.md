@@ -24,6 +24,14 @@ is a collection of utility macros around `match`.
   [(D x) (I y)] (D (+ x (from-int y)))
   [(I x) (D y)] (D (+ (from-int x) y)))
 
+; A row of variables is a catch-all for whatever the rows above it miss.
+(MatchUtils.defn-match pair-or
+  [(Maybe.Just a) (Maybe.Just b)] (+ a b)
+  [x              y]              0)
+
+(pair-or (Maybe.Just 1) (Maybe.Just 2))   ; => 3
+(pair-or (Maybe.Just 1) (Maybe.Nothing))  ; => 0
+
 ; defn-match also supports multi-arity. When rows differ in length,
 ; each arity becomes its own first-class defn named `name-N`, and
 ; `name` itself is a dispatcher macro for call sites.
@@ -51,10 +59,18 @@ to `match` forms fail pattern-variable resolution when the call is the direct
 body of a `defn` (the pattern's binder gets looked up as a value). Qualifying
 the call sidesteps it.
 
-`defn-match` compiles each row independently and does not implement default
-rows. A row with a variable binding at some column will shadow later rows
-that have concrete patterns at the same column, since the variable matches
-anything at that position. Write concrete rows first and catch-alls last.
+`defn-match` tries rows in source order, and the first row that matches every
+column wins. A variable pattern is a catch-all for its column, and it does not
+hide later rows that the catch-all row itself fails to match, so a trailing
+`[x y] fallback` row picks up everything the rows above it miss.
+
+A row whose patterns are *all* variables does make every later row
+unreachable, since it matches any input. Unreachable rows are dropped rather
+than compiled, so they no longer constrain the argument types; if that leaves
+an argument unconstrained, annotate it at the call site.
+
+Row sets are not checked for exhaustiveness. An input that no row covers
+prints `Unhandled case in name` and aborts.
 
 In multi-arity mode, the public name (e.g. `bump`) becomes a dispatching
 macro rather than a function. Macros cannot be passed as higher-order
