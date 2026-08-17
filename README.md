@@ -79,7 +79,9 @@ loudly; the cost is that a pattern variable cannot be capitalised.
 The spellings may be mixed inside one function: a column's arms are keyed by
 the constructor's name, not by how it is written, so `Maybe.Just` and `Just`
 are one arm. Two heads that share a name but sit under different modules
-(`A.X` and `B.X`) are a macro error.
+(`A.X` and `B.X`, `Tree.Leaf` and `AvlTree.Leaf`) are a macro error, unless
+one spells out the other's module path (`Inner.X` and `Outer.Inner.X`), which
+reads as one constructor whether or not the modules nest.
 
 Row sets are not checked for exhaustiveness. An input that no row covers
 prints `Unhandled case in name` to stderr and aborts.

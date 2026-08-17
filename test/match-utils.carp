@@ -240,6 +240,22 @@
                        [_ _]
                        -1)
 
+(defmodule Qual (deftype Boxed (Wrapped [Int])))
+
+(use Qual)
+
+(MatchUtils.defn-match mixed-qualified
+                       [(Qual.Boxed.Wrapped n)]
+                       n
+                       [(Boxed.Wrapped m)]
+                       (* m 2))
+
+(MatchUtils.defn-match mixed-qualified-rev
+                       [(Boxed.Wrapped m)]
+                       (* m 2)
+                       [(Qual.Boxed.Wrapped n)]
+                       n)
+
 (defn nothing-int [] (the (Maybe Int) (Maybe.Nothing)))
 
 (defn nothing-sig [] (the (Maybe Sig) (Maybe.Nothing)))
@@ -792,4 +808,29 @@
   (assert-equal test
     -1
     (mixed-inner (nothing-sig) (nothing-int))
-    "mixed-inner: the default row still catches what no row matches"))
+    "mixed-inner: the default row still catches what no row matches")
+
+  (assert-equal test
+    5
+    (mixed-qualified (Qual.Boxed.Wrapped 5))
+    "mixed-qualified: a multi-segment spelling merges with its unqualified form")
+
+  (assert-equal test
+    10
+    (mixed-qualified-rev (Qual.Boxed.Wrapped 5))
+    "mixed-qualified-rev: the merge is the same with the rows the other way round")
+
+  (assert-equal test
+    false
+    (MatchUtils.dot-suffix? "Tree.Leaf" "AvlTree.Leaf")
+    "dot-suffix?: a suffix that misses a dot boundary does not qualify a head")
+
+  (assert-equal test
+    false
+    (MatchUtils.dot-suffix? "AvlTree.Leaf" "Tree.Leaf")
+    "dot-suffix?: neither direction qualifies, so either row order is a macro error")
+
+  (assert-equal test
+    true
+    (MatchUtils.dot-suffix? "Just" "Maybe.Just")
+    "dot-suffix?: a suffix that lands on a dot boundary qualifies a head"))

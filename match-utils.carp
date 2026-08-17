@@ -78,7 +78,6 @@ pattern variable into value-lookup.")
   (hidden dot-suffix?)
   (defndynamic dot-suffix? [s longer]
     (cond
-      (= s longer) true
       (= (String.length longer) 0) false
       (and (= (String.head longer) ".") (= (String.tail longer) s)) true
       (MatchUtils.dot-suffix? s (String.tail longer))))
@@ -401,7 +400,10 @@ pattern variable otherwise. Both spellings below match the same thing:
 The spellings may also be mixed inside one function: a column's arms
 are keyed by the constructor's name, not by how it is written, so
 `Maybe.Just` and `Just` are one arm. Two heads that share a name but
-sit under different modules (`A.X` and `B.X`) are a macro error.
+sit under different modules (`A.X` and `B.X`, `Tree.Leaf` and
+`AvlTree.Leaf`) are a macro error, unless one spells out the other's
+module path (`Inner.X` and `Outer.Inner.X`), which reads as one
+constructor whether or not the modules nest.
 
 A capitalised symbol that names no constructor of the column's type is
 a compile error, so a misspelled constructor fails loudly instead of

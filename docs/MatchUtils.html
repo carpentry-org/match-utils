@@ -91,7 +91,10 @@ pattern variable otherwise. Both spellings below match the same thing:</p>
 <p>The spellings may also be mixed inside one function: a column's arms
 are keyed by the constructor's name, not by how it is written, so
 <code>Maybe.Just</code> and <code>Just</code> are one arm. Two heads that share a name but
-sit under different modules (<code>A.X</code> and <code>B.X</code>) are a macro error.</p>
+sit under different modules (<code>A.X</code> and <code>B.X</code>, <code>Tree.Leaf</code> and
+<code>AvlTree.Leaf</code>) are a macro error, unless one spells out the other's
+module path (<code>Inner.X</code> and <code>Outer.Inner.X</code>), which reads as one
+constructor whether or not the modules nest.</p>
 <p>A capitalised symbol that names no constructor of the column's type is
 a compile error, so a misspelled constructor fails loudly instead of
 turning into a catch-all. The cost is that a pattern variable cannot be
