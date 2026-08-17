@@ -184,7 +184,41 @@
 
 (MatchUtils.defn-match bare-only [Maybe.Nothing] 0 [x] -1)
 
+(deftype Sig
+  (S [])
+  (V [Int]))
+
+(use Maybe)
+
+(use Sig)
+
+(MatchUtils.defn-match unqualified-first [Nothing] 0 [(Just n)] n)
+
+(MatchUtils.defn-match unqualified-col1
+                       [(Just a) Nothing]
+                       a
+                       [(Just a) (Just b)]
+                       (+ a b))
+
+(MatchUtils.defn-match unqualified-single-char [S] -1 [(V n)] n)
+
+(MatchUtils.defn-match unqualified-nested
+                       [(Just S)]
+                       100
+                       [(Just (V n))]
+                       n
+                       [Nothing]
+                       -1)
+
+(MatchUtils.defn-match underscore-vars
+                       [(Just a) (Just b)]
+                       (+ a b)
+                       [_lhs _rhs]
+                       -7)
+
 (defn nothing-int [] (the (Maybe Int) (Maybe.Nothing)))
+
+(defn nothing-sig [] (the (Maybe Sig) (Maybe.Nothing)))
 
 (deftest test
   (assert-equal test
@@ -629,4 +663,64 @@
   (assert-equal test
     -1
     (bare-only (Maybe.Just 3))
-    "bare-only: the variable row covers the constructor the bare row misses"))
+    "bare-only: the variable row covers the constructor the bare row misses")
+
+  (assert-equal test
+    5
+    (unqualified-first (Maybe.Just 5))
+    "unqualified-first: a leading capitalised row is a constructor, not a catch-all")
+
+  (assert-equal test
+    42
+    (unqualified-first (Maybe.Just 42))
+    "unqualified-first: the later constructor row still binds its argument")
+
+  (assert-equal test
+    0
+    (unqualified-first (nothing-int))
+    "unqualified-first: the capitalised row itself still matches")
+
+  (assert-equal test
+    3
+    (unqualified-col1 (Maybe.Just 1) (Maybe.Just 2))
+    "unqualified-col1: a capitalised pattern outside column 0 is not a catch-all")
+
+  (assert-equal test
+    1
+    (unqualified-col1 (Maybe.Just 1) (nothing-int))
+    "unqualified-col1: the capitalised column-1 row matches")
+
+  (assert-equal test
+    9
+    (unqualified-single-char (Sig.V 9))
+    "unqualified-single-char: a one-letter capitalised symbol is a constructor")
+
+  (assert-equal test
+    -1
+    (unqualified-single-char (Sig.S))
+    "unqualified-single-char: the nullary row itself matches")
+
+  (assert-equal test
+    100
+    (unqualified-nested (Maybe.Just (Sig.S)))
+    "unqualified-nested: a capitalised subpattern is a constructor")
+
+  (assert-equal test
+    9
+    (unqualified-nested (Maybe.Just (Sig.V 9)))
+    "unqualified-nested: the sibling subpattern row is still reachable")
+
+  (assert-equal test
+    -1
+    (unqualified-nested (nothing-sig))
+    "unqualified-nested: the outer capitalised row matches")
+
+  (assert-equal test
+    3
+    (underscore-vars (Maybe.Just 1) (Maybe.Just 2))
+    "underscore-vars: the concrete row still wins")
+
+  (assert-equal test
+    -7
+    (underscore-vars (Maybe.Just 1) (nothing-int))
+    "underscore-vars: a leading underscore keeps a symbol a pattern variable"))

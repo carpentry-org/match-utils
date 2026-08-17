@@ -76,19 +76,22 @@ match:</p>
 <p>A row whose patterns are all variables makes every later row
 unreachable, since it matches any input. Unreachable rows are dropped
 rather than compiled, so they no longer constrain the argument types.</p>
-<p>A bare symbol in pattern position is a pattern variable, with one
-exception: a qualified symbol such as <code>Maybe.Nothing</code> is a nullary
-constructor, since Carp cannot bind a dotted symbol anyway. An
-unqualified nullary constructor is indistinguishable from a variable
-here, so under <code>(use Maybe)</code> it must be written <code>(Nothing)</code>:</p>
+<p>A bare symbol in pattern position is a nullary constructor if it is
+qualified (<code>Maybe.Nothing</code>) or starts with a capital letter, and a
+pattern variable otherwise. Both spellings below match the same thing:</p>
 <pre><code>(MatchUtils.defn-match take-just
-  [Maybe.Nothing]  0     ; nullary constructor
+  [Maybe.Nothing]  0
   [(Maybe.Just n)] n)
 
-(MatchUtils.defn-match shadowed
-  [Nothing]        0     ; a VARIABLE named Nothing — catch-all
-  [(Maybe.Just n)] n)    ; unreachable
+(use Maybe)
+(MatchUtils.defn-match take-just-2
+  [Nothing]  0
+  [(Just n)] n)
 </code></pre>
+<p>A capitalised symbol that names no constructor of the column's type is
+a compile error, so a misspelled constructor fails loudly instead of
+turning into a catch-all. The cost is that a pattern variable cannot be
+capitalised.</p>
 <p>When all rows have the same arity, expands to a single <code>defn</code> with
 nested match dispatch. <code>add-num</code> above is a plain function, first-class
 and usable in higher-order contexts.</p>

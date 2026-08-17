@@ -71,14 +71,26 @@ pattern variable into value-lookup.")
       (= (String.head s) ".") true
       (MatchUtils.dotted-name? (String.tail s))))
 
-  ; Carp cannot bind a dotted symbol, so one in a pattern is a constructor.
+  (hidden head-among?)
+  (defndynamic head-among? [s chars]
+    (cond
+      (= (String.length chars) 0) false
+      (= (String.head s) (String.head chars)) true
+      (MatchUtils.head-among? s (String.tail chars))))
+
+  ; Carp cannot bind a dotted symbol, and constructors are capitalised by convention.
+  (hidden ctor-name?)
+  (defndynamic ctor-name? [s]
+    (or (MatchUtils.dotted-name? s)
+        (MatchUtils.head-among? s "ABCDEFGHIJKLMNOPQRSTUVWXYZ")))
+
   (hidden pattern-var?)
   (defndynamic pattern-var? [p]
-    (and (symbol? p) (not (MatchUtils.dotted-name? (str p)))))
+    (and (symbol? p) (not (MatchUtils.ctor-name? (str p)))))
 
   (hidden ctor?)
   (defndynamic ctor? [p]
-    (or (list? p) (and (symbol? p) (MatchUtils.dotted-name? (str p)))))
+    (or (list? p) (and (symbol? p) (MatchUtils.ctor-name? (str p)))))
 
   (hidden ctor-head)
   (defndynamic ctor-head [p] (if (list? p) (car p) p))
@@ -333,21 +345,25 @@ A row whose patterns are all variables makes every later row
 unreachable, since it matches any input. Unreachable rows are dropped
 rather than compiled, so they no longer constrain the argument types.
 
-A bare symbol in pattern position is a pattern variable, with one
-exception: a qualified symbol such as `Maybe.Nothing` is a nullary
-constructor, since Carp cannot bind a dotted symbol anyway. An
-unqualified nullary constructor is indistinguishable from a variable
-here, so under `(use Maybe)` it must be written `(Nothing)`:
+A bare symbol in pattern position is a nullary constructor if it is
+qualified (`Maybe.Nothing`) or starts with a capital letter, and a
+pattern variable otherwise. Both spellings below match the same thing:
 
 ```
 (MatchUtils.defn-match take-just
-  [Maybe.Nothing]  0     ; nullary constructor
+  [Maybe.Nothing]  0
   [(Maybe.Just n)] n)
 
-(MatchUtils.defn-match shadowed
-  [Nothing]        0     ; a VARIABLE named Nothing — catch-all
-  [(Maybe.Just n)] n)    ; unreachable
+(use Maybe)
+(MatchUtils.defn-match take-just-2
+  [Nothing]  0
+  [(Just n)] n)
 ```
+
+A capitalised symbol that names no constructor of the column's type is
+a compile error, so a misspelled constructor fails loudly instead of
+turning into a catch-all. The cost is that a pattern variable cannot be
+capitalised.
 
 When all rows have the same arity, expands to a single `defn` with
 nested match dispatch. `add-num` above is a plain function, first-class
