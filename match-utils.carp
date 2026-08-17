@@ -64,9 +64,31 @@ pattern variable into value-lookup.")
   (defndynamic fresh [n]
     (if (= n 0) '() (cons (gensym) (MatchUtils.fresh (dec n)))))
 
+  (hidden dotted-name?)
+  (defndynamic dotted-name? [s]
+    (cond
+      (= (String.length s) 0) false
+      (= (String.head s) ".") true
+      (MatchUtils.dotted-name? (String.tail s))))
+
+  ; Carp cannot bind a dotted symbol, so one in a pattern is a constructor.
+  (hidden pattern-var?)
+  (defndynamic pattern-var? [p]
+    (and (symbol? p) (not (MatchUtils.dotted-name? (str p)))))
+
+  (hidden ctor?)
+  (defndynamic ctor? [p]
+    (or (list? p) (and (symbol? p) (MatchUtils.dotted-name? (str p)))))
+
+  (hidden ctor-head)
+  (defndynamic ctor-head [p] (if (list? p) (car p) p))
+
+  (hidden ctor-args)
+  (defndynamic ctor-args [p] (if (list? p) (cdr p) '()))
+
   (hidden discriminant)
   (defndynamic discriminant [patterns]
-    (if (symbol? (car patterns))
+    (if (MatchUtils.pattern-var? (car patterns))
       (inc (MatchUtils.discriminant (cdr patterns)))
       0))
 
@@ -90,8 +112,14 @@ pattern variable into value-lookup.")
     (reduce
       (fn [acc row]
         (let [p (caar row)]
-          (if (and (list? p) (not (any? (fn [ctor] (= (car ctor) (car p))) acc)))
-            (cons-last (list (car p) (length (cdr p))) acc)
+          (if (and (MatchUtils.ctor? p)
+                   (not
+                     (any?
+                       (fn [ctor] (= (car ctor) (MatchUtils.ctor-head p)))
+                       acc)))
+            (cons-last
+              (list (MatchUtils.ctor-head p) (length (MatchUtils.ctor-args p)))
+              acc)
             acc)))
       '()
       rows))
@@ -115,14 +143,16 @@ pattern variable into value-lookup.")
               body (cadr row)
               p (car patterns)]
           (cond
-            (symbol? p)
+            (MatchUtils.pattern-var? p)
               (cons-last
                 (list
                   (append (MatchUtils.wildcards arity) (cdr patterns))
                   (MatchUtils.bind (list p) (list whole) body))
                 acc)
-            (and (list? p) (= (car p) constructor))
-              (cons-last (list (append (cdr p) (cdr patterns)) body) acc)
+            (and (MatchUtils.ctor? p) (= (MatchUtils.ctor-head p) constructor))
+              (cons-last
+                (list (append (MatchUtils.ctor-args p) (cdr patterns)) body)
+                acc)
             acc)))
       '()
       rows))
@@ -135,7 +165,7 @@ pattern variable into value-lookup.")
               body (cadr row)
               p (car patterns)]
           (cond
-            (symbol? p)
+            (MatchUtils.pattern-var? p)
               (cons-last
                 (list (cdr patterns)
                       (MatchUtils.bind (list p) (list whole) body))
@@ -151,7 +181,7 @@ pattern variable into value-lookup.")
       (fn [acc row]
         (let [patterns (car row)
               p (car patterns)]
-          (if (symbol? p)
+          (if (MatchUtils.pattern-var? p)
             (cons-last
               (list (cdr patterns)
                     (MatchUtils.bind (list p) (list whole) (cadr row)))
@@ -164,7 +194,8 @@ pattern variable into value-lookup.")
   (defndynamic needs-whole? [rows]
     (any?
       (fn [row]
-        (let [p (caar row)] (and (symbol? p) (MatchUtils.occurs? p (cadr row)))))
+        (let [p (caar row)]
+          (and (MatchUtils.pattern-var? p) (MatchUtils.occurs? p (cadr row)))))
       rows))
 
   (hidden emit-match)
@@ -217,14 +248,14 @@ pattern variable into value-lookup.")
     (cond
       (empty? rows) (MatchUtils.unhandled name)
       (empty? scrutinees) (cadr (car rows))
-      (all? symbol? (caar rows))
+      (all? MatchUtils.pattern-var? (caar rows))
         (MatchUtils.bind (caar rows) scrutinees (cadr (car rows)))
       (let [col (MatchUtils.discriminant (caar rows))
             ordered (MatchUtils.rotate col scrutinees)
             aligned (map
               (fn [row] (list (MatchUtils.rotate col (car row)) (cadr row)))
               rows)]
-        (if (any? list? (map caar aligned))
+        (if (any? MatchUtils.ctor? (map caar aligned))
           (MatchUtils.emit-match name (car ordered) (cdr ordered) aligned)
           (MatchUtils.emit-case name (car ordered) (cdr ordered) aligned)))))
 
@@ -243,7 +274,7 @@ pattern variable into value-lookup.")
 
   (hidden emit-arity)
   (defndynamic emit-arity [name paired]
-    (if (and (= (length paired) 1) (all? symbol? (caar paired)))
+    (if (and (= (length paired) 1) (all? MatchUtils.pattern-var? (caar paired)))
       (let [row (car paired)]
         `(defn %name %(collect-into (car row) array) %(cadr row)))
       (let [args (map (fn [_] (gensym)) (caar paired))]
@@ -301,6 +332,22 @@ match:
 A row whose patterns are all variables makes every later row
 unreachable, since it matches any input. Unreachable rows are dropped
 rather than compiled, so they no longer constrain the argument types.
+
+A bare symbol in pattern position is a pattern variable, with one
+exception: a qualified symbol such as `Maybe.Nothing` is a nullary
+constructor, since Carp cannot bind a dotted symbol anyway. An
+unqualified nullary constructor is indistinguishable from a variable
+here, so under `(use Maybe)` it must be written `(Nothing)`:
+
+```
+(MatchUtils.defn-match take-just
+  [Maybe.Nothing]  0     ; nullary constructor
+  [(Maybe.Just n)] n)
+
+(MatchUtils.defn-match shadowed
+  [Nothing]        0     ; a VARIABLE named Nothing — catch-all
+  [(Maybe.Just n)] n)    ; unreachable
+```
 
 When all rows have the same arity, expands to a single `defn` with
 nested match dispatch. `add-num` above is a plain function, first-class

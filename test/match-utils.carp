@@ -164,6 +164,28 @@
                        [u v]
                        -1)
 
+(MatchUtils.defn-match bare-first [Maybe.Nothing] 0 [(Maybe.Just n)] n)
+
+(MatchUtils.defn-match bare-last [(Maybe.Just n)] n [Maybe.Nothing] 0)
+
+(MatchUtils.defn-match bare-col1
+                       [(Maybe.Just a) Maybe.Nothing]
+                       a
+                       [(Maybe.Just a) (Maybe.Just b)]
+                       (+ a b))
+
+(MatchUtils.defn-match bare-with-default
+                       [(Maybe.Just a) Maybe.Nothing]
+                       a
+                       [Maybe.Nothing y]
+                       -2
+                       [x y]
+                       -1)
+
+(MatchUtils.defn-match bare-only [Maybe.Nothing] 0 [x] -1)
+
+(defn nothing-int [] (the (Maybe Int) (Maybe.Nothing)))
+
 (deftest test
   (assert-equal test
     42
@@ -547,4 +569,64 @@
   (assert-equal test
     -1
     (tally (Maybe.Nothing) (Maybe.Just 2))
-    "tally: catch-all covers the other arity-2 miss too"))
+    "tally: catch-all covers the other arity-2 miss too")
+
+  (assert-equal test
+    5
+    (bare-first (Maybe.Just 5))
+    "bare-first: a leading bare nullary row does not swallow later rows")
+
+  (assert-equal test
+    42
+    (bare-first (Maybe.Just 42))
+    "bare-first: the later constructor row still binds its argument")
+
+  (assert-equal test
+    0
+    (bare-first (nothing-int))
+    "bare-first: the bare nullary row itself still matches")
+
+  (assert-equal test
+    7
+    (bare-last (Maybe.Just 7))
+    "bare-last: a trailing bare nullary row stays correct")
+
+  (assert-equal test
+    0
+    (bare-last (nothing-int))
+    "bare-last: the trailing bare nullary row matches")
+
+  (assert-equal test
+    3
+    (bare-col1 (Maybe.Just 1) (Maybe.Just 2))
+    "bare-col1: a bare nullary outside column 0 is not a catch-all")
+
+  (assert-equal test
+    1
+    (bare-col1 (Maybe.Just 1) (nothing-int))
+    "bare-col1: the bare nullary column-1 row matches")
+
+  (assert-equal test
+    4
+    (bare-with-default (Maybe.Just 4) (nothing-int))
+    "bare-with-default: bare nullary row wins over the catch-all")
+
+  (assert-equal test
+    -1
+    (bare-with-default (Maybe.Just 4) (Maybe.Just 9))
+    "bare-with-default: the catch-all still covers what no row matches")
+
+  (assert-equal test
+    -2
+    (bare-with-default (nothing-int) (Maybe.Just 9))
+    "bare-with-default: a bare nullary in column 0 matches before the catch-all")
+
+  (assert-equal test
+    0
+    (bare-only (nothing-int))
+    "bare-only: a column of only a bare nullary and a variable compiles to match")
+
+  (assert-equal test
+    -1
+    (bare-only (Maybe.Just 3))
+    "bare-only: the variable row covers the constructor the bare row misses"))

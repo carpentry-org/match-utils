@@ -55,6 +55,11 @@ every column wins. A variable pattern is a catch-all for its column and
 does not hide later rows that the catch-all row itself fails to match.
 A row whose patterns are all variables does make every later row
 unreachable; unreachable rows are dropped rather than compiled.</p>
+<p>A bare symbol in pattern position is a pattern variable, with one
+exception: a qualified symbol such as <code>Maybe.Nothing</code> is a nullary
+constructor, because Carp cannot bind a dotted symbol anyway. An
+unqualified nullary constructor is indistinguishable from a variable
+at macro-expansion time, so under <code>(use Maybe)</code> write it <code>(Nothing)</code>.</p>
 <p>Row sets are not checked for exhaustiveness. An input that no row
 covers prints <code>Unhandled case in name</code> and aborts.</p>
 

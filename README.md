@@ -69,6 +69,13 @@ unreachable, since it matches any input. Unreachable rows are dropped rather
 than compiled, so they no longer constrain the argument types; if that leaves
 an argument unconstrained, annotate it at the call site.
 
+A bare symbol in pattern position is a pattern variable, with one exception:
+a qualified symbol such as `Maybe.Nothing` is a nullary constructor, because
+Carp cannot bind a dotted symbol anyway. An unqualified nullary constructor
+is indistinguishable from a variable at macro-expansion time, so under
+`(use Maybe)` write it as `(Nothing)` — a bare `Nothing` is a catch-all
+variable and will shadow every row below it.
+
 Row sets are not checked for exhaustiveness. An input that no row covers
 prints `Unhandled case in name` and aborts.
 
