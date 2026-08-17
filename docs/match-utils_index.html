@@ -61,8 +61,12 @@ pattern variable otherwise. So under <code>(use Maybe)</code> a bare <code>Nothi
 row is the constructor pattern, not a catch-all. A capitalised symbol
 that names no constructor of the column's type is a compile error; the
 cost is that a pattern variable cannot be capitalised.</p>
+<p>The spellings may be mixed inside one function: a column's arms are
+keyed by the constructor's name, not by how it is written, so
+<code>Maybe.Just</code> and <code>Just</code> are one arm. Two heads that share a name but
+sit under different modules (<code>A.X</code> and <code>B.X</code>) are a macro error.</p>
 <p>Row sets are not checked for exhaustiveness. An input that no row
-covers prints <code>Unhandled case in name</code> and aborts.</p>
+covers prints <code>Unhandled case in name</code> to stderr and aborts.</p>
 
                 </div>
             </a>

@@ -216,6 +216,30 @@
                        [_lhs _rhs]
                        -7)
 
+(MatchUtils.defn-match mixed-spelling
+                       [(Maybe.Just a) (Just b)]
+                       (+ a b)
+                       [(Just x) Nothing]
+                       x
+                       [_ _]
+                       -99)
+
+(MatchUtils.defn-match mixed-nullary
+                       [Maybe.Nothing (Just a)]
+                       a
+                       [Nothing Nothing]
+                       -1
+                       [(Just x) _]
+                       x)
+
+(MatchUtils.defn-match mixed-inner
+                       [(Just (Sig.V n)) Nothing]
+                       n
+                       [(Just (V n)) (Just m)]
+                       (+ n m)
+                       [_ _]
+                       -1)
+
 (defn nothing-int [] (the (Maybe Int) (Maybe.Nothing)))
 
 (defn nothing-sig [] (the (Maybe Sig) (Maybe.Nothing)))
@@ -723,4 +747,49 @@
   (assert-equal test
     -7
     (underscore-vars (Maybe.Just 1) (nothing-int))
-    "underscore-vars: a leading underscore keeps a symbol a pattern variable"))
+    "underscore-vars: a leading underscore keeps a symbol a pattern variable")
+
+  (assert-equal test
+    5
+    (mixed-spelling (Maybe.Just 2) (Maybe.Just 3))
+    "mixed-spelling: the first row matches when both columns are Just")
+
+  (assert-equal test
+    7
+    (mixed-spelling (Maybe.Just 7) (nothing-int))
+    "mixed-spelling: a row spelling the constructor unqualified is reachable")
+
+  (assert-equal test
+    -99
+    (mixed-spelling (nothing-int) (nothing-int))
+    "mixed-spelling: the default row still catches what no row matches")
+
+  (assert-equal test
+    1
+    (mixed-nullary (Maybe.Just 1) (nothing-int))
+    "mixed-nullary: a constructor row below mixed nullary rows matches")
+
+  (assert-equal test
+    5
+    (mixed-nullary (nothing-int) (Maybe.Just 5))
+    "mixed-nullary: the qualified nullary row matches")
+
+  (assert-equal test
+    -1
+    (mixed-nullary (nothing-int) (nothing-int))
+    "mixed-nullary: an unqualified nullary row below a qualified one is reachable")
+
+  (assert-equal test
+    4
+    (mixed-inner (Maybe.Just (Sig.V 4)) (nothing-int))
+    "mixed-inner: the first row matches on a qualified subpattern")
+
+  (assert-equal test
+    3
+    (mixed-inner (Maybe.Just (Sig.V 1)) (Maybe.Just 2))
+    "mixed-inner: a subpattern column mixing spellings keeps the second row reachable")
+
+  (assert-equal test
+    -1
+    (mixed-inner (nothing-sig) (nothing-int))
+    "mixed-inner: the default row still catches what no row matches"))

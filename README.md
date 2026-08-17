@@ -76,8 +76,13 @@ pattern, not a catch-all. A capitalised symbol that names no constructor of
 the column's type is a compile error, so a misspelled constructor fails
 loudly; the cost is that a pattern variable cannot be capitalised.
 
+The spellings may be mixed inside one function: a column's arms are keyed by
+the constructor's name, not by how it is written, so `Maybe.Just` and `Just`
+are one arm. Two heads that share a name but sit under different modules
+(`A.X` and `B.X`) are a macro error.
+
 Row sets are not checked for exhaustiveness. An input that no row covers
-prints `Unhandled case in name` and aborts.
+prints `Unhandled case in name` to stderr and aborts.
 
 In multi-arity mode, the public name (e.g. `bump`) becomes a dispatching
 macro rather than a function. Macros cannot be passed as higher-order

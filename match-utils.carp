@@ -71,6 +71,18 @@ pattern variable into value-lookup.")
       (= (String.head s) ".") true
       (MatchUtils.dotted-name? (String.tail s))))
 
+  (hidden last-segment)
+  (defndynamic last-segment [s]
+    (if (MatchUtils.dotted-name? s) (MatchUtils.last-segment (String.tail s)) s))
+
+  (hidden dot-suffix?)
+  (defndynamic dot-suffix? [s longer]
+    (cond
+      (= s longer) true
+      (= (String.length longer) 0) false
+      (and (= (String.head longer) ".") (= (String.tail longer) s)) true
+      (MatchUtils.dot-suffix? s (String.tail longer))))
+
   (hidden head-among?)
   (defndynamic head-among? [s chars]
     (cond
@@ -98,6 +110,11 @@ pattern variable into value-lookup.")
   (hidden ctor-args)
   (defndynamic ctor-args [p] (if (list? p) (cdr p) '()))
 
+  ; A column has one scrutinee type, so heads sharing a final segment are one constructor.
+  (hidden ctor-key)
+  (defndynamic ctor-key [p]
+    (MatchUtils.last-segment (str (MatchUtils.ctor-head p))))
+
   (hidden discriminant)
   (defndynamic discriminant [patterns]
     (if (MatchUtils.pattern-var? (car patterns))
@@ -117,22 +134,42 @@ pattern variable into value-lookup.")
 
   (hidden unhandled)
   (defndynamic unhandled [name]
-    `(do (println* %(str "Unhandled case in " name)) (bottom)))
+    `(do (IO.errorln %(str "Unhandled case in " name)) (bottom)))
+
+  (hidden unify-head)
+  (defndynamic unify-head [ctor head]
+    (let [seen (str (car ctor))
+          written (str head)]
+      (cond
+        (or (= seen written)
+            (/= (MatchUtils.last-segment seen) (MatchUtils.last-segment written)))
+          ctor
+        (MatchUtils.dot-suffix? seen written) (list head (cadr ctor))
+        (MatchUtils.dot-suffix? written seen) ctor
+        (macro-error
+          (str "defn-match: a pattern column mixes "
+               seen
+               " and "
+               written
+               ", which cannot name the same constructor")))))
 
   (hidden constructors)
   (defndynamic constructors [rows]
     (reduce
       (fn [acc row]
         (let [p (caar row)]
-          (if (and (MatchUtils.ctor? p)
-                   (not
-                     (any?
-                       (fn [ctor] (= (car ctor) (MatchUtils.ctor-head p)))
-                       acc)))
+          (cond
+            (not (MatchUtils.ctor? p)) acc
+            (any?
+              (fn [ctor]
+                (= (MatchUtils.ctor-key (car ctor)) (MatchUtils.ctor-key p)))
+              acc)
+              (map
+                (fn [ctor] (MatchUtils.unify-head ctor (MatchUtils.ctor-head p)))
+                acc)
             (cons-last
               (list (MatchUtils.ctor-head p) (length (MatchUtils.ctor-args p)))
-              acc)
-            acc)))
+              acc))))
       '()
       rows))
 
@@ -161,7 +198,8 @@ pattern variable into value-lookup.")
                   (append (MatchUtils.wildcards arity) (cdr patterns))
                   (MatchUtils.bind (list p) (list whole) body))
                 acc)
-            (and (MatchUtils.ctor? p) (= (MatchUtils.ctor-head p) constructor))
+            (and (MatchUtils.ctor? p)
+                 (= (MatchUtils.ctor-key p) (MatchUtils.ctor-key constructor)))
               (cons-last
                 (list (append (MatchUtils.ctor-args p) (cdr patterns)) body)
                 acc)
@@ -360,6 +398,11 @@ pattern variable otherwise. Both spellings below match the same thing:
   [(Just n)] n)
 ```
 
+The spellings may also be mixed inside one function: a column's arms
+are keyed by the constructor's name, not by how it is written, so
+`Maybe.Just` and `Just` are one arm. Two heads that share a name but
+sit under different modules (`A.X` and `B.X`) are a macro error.
+
 A capitalised symbol that names no constructor of the column's type is
 a compile error, so a misspelled constructor fails loudly instead of
 turning into a catch-all. The cost is that a pattern variable cannot be
@@ -385,8 +428,8 @@ picks the right arity at the call site:
 ;   (Array.map count m)          -- does NOT work, count is a macro
 ```
 
-Inputs no row covers print `Unhandled case in name` and abort. The
-rows are not checked for exhaustiveness at compile time.
+Inputs no row covers print `Unhandled case in name` to stderr and
+abort. The rows are not checked for exhaustiveness at compile time.
 
 When invoked as a direct `defn` body, prefer the qualified form
 `MatchUtils.defn-match` over `(use MatchUtils)` for the same reason

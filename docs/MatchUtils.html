@@ -88,6 +88,10 @@ pattern variable otherwise. Both spellings below match the same thing:</p>
   [Nothing]  0
   [(Just n)] n)
 </code></pre>
+<p>The spellings may also be mixed inside one function: a column's arms
+are keyed by the constructor's name, not by how it is written, so
+<code>Maybe.Just</code> and <code>Just</code> are one arm. Two heads that share a name but
+sit under different modules (<code>A.X</code> and <code>B.X</code>) are a macro error.</p>
 <p>A capitalised symbol that names no constructor of the column's type is
 a compile error, so a misspelled constructor fails loudly instead of
 turning into a catch-all. The cost is that a pattern variable cannot be
@@ -108,8 +112,8 @@ picks the right arity at the call site:</p>
 ;   (Array.map count-1 maybes)   -- works
 ;   (Array.map count m)          -- does NOT work, count is a macro
 </code></pre>
-<p>Inputs no row covers print <code>Unhandled case in name</code> and abort. The
-rows are not checked for exhaustiveness at compile time.</p>
+<p>Inputs no row covers print <code>Unhandled case in name</code> to stderr and
+abort. The rows are not checked for exhaustiveness at compile time.</p>
 <p>When invoked as a direct <code>defn</code> body, prefer the qualified form
 <code>MatchUtils.defn-match</code> over <code>(use MatchUtils)</code> for the same reason
 documented on <code>let-match</code>.</p>
